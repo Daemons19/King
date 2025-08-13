@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Trash2, Plus, AlertTriangle, Copy, Calendar, Edit2, Check, X } from "lucide-react"
+import { BiweeklyScheduler } from "./biweekly-scheduler"
 
 // Helper functions
 const getManilaTime = () => {
@@ -505,17 +506,20 @@ export function SettingsDialog({
         </DialogHeader>
 
         <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-purple-100 p-1 rounded-lg">
-            <TabsTrigger value="general" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
+          <TabsList className="grid w-full grid-cols-5 bg-purple-100 p-1 rounded-lg">
+            <TabsTrigger value="general" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
               General
             </TabsTrigger>
-            <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
+            <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
               Income
             </TabsTrigger>
-            <TabsTrigger value="payables" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
+            <TabsTrigger value="payables" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
               Payables
             </TabsTrigger>
-            <TabsTrigger value="data" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
+            <TabsTrigger value="biweekly" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
+              Biweekly
+            </TabsTrigger>
+            <TabsTrigger value="data" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
               Data
             </TabsTrigger>
           </TabsList>
@@ -1057,6 +1061,10 @@ export function SettingsDialog({
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="biweekly" className="space-y-4">
+            <BiweeklyScheduler currency={currency} />
           </TabsContent>
 
           <TabsContent value="data" className="space-y-4">
