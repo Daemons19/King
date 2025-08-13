@@ -14,21 +14,20 @@ interface OptimizedCardProps {
 
 export function OptimizedCard({ title, value, subtitle, icon: Icon, gradient, iconColor }: OptimizedCardProps) {
   return (
-    <Card className={`${gradient} border-0 text-white overflow-hidden relative`}>
+    <Card
+      className={`${gradient} text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105`}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <p className="text-white/80 text-sm font-medium">{title}</p>
-            <p className="text-2xl font-bold text-white mt-1">{value}</p>
-            {subtitle && <p className="text-white/70 text-xs mt-1">{subtitle}</p>}
+            <p className="text-white/80 text-xs font-medium mb-1">{title}</p>
+            <p className="text-xl font-bold mb-1 truncate">{value}</p>
+            {subtitle && <p className="text-white/70 text-xs">{subtitle}</p>}
           </div>
-          <div className={`${iconColor} opacity-80`}>
-            <Icon className="w-8 h-8" />
+          <div className={`${iconColor} ml-2 flex-shrink-0`}>
+            <Icon className="w-6 h-6" />
           </div>
         </div>
-        {/* Decorative background element */}
-        <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full" />
-        <div className="absolute -right-2 -bottom-2 w-12 h-12 bg-white/5 rounded-full" />
       </CardContent>
     </Card>
   )
