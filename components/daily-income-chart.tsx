@@ -1,86 +1,126 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Target } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from "recharts"
+
+interface DailyIncomeData {
+  day: string
+  amount: number
+  goal: number
+  date: string
+  isToday: boolean
+  isPast: boolean
+  isWorkDay: boolean
+}
 
 interface DailyIncomeChartProps {
-  dailyIncome: any[]
+  dailyIncome: DailyIncomeData[]
   currency: string
 }
 
 export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProps) {
-  // Real-time calculations - recalculated on every render
+  // Transform data for the chart
+  const chartData = dailyIncome.map((day) => ({
+    day: day.day,
+    amount: day.amount,
+    goal: day.goal,
+    isToday: day.isToday,
+    isPast: day.isPast,
+    isWorkDay: day.isWorkDay,
+    date: day.date,
+    fill: day.isToday
+      ? "hsl(var(--chart-1))"
+      : day.isPast
+        ? day.amount >= day.goal
+          ? "hsl(var(--chart-2))"
+          : "hsl(var(--chart-3))"
+        : "hsl(var(--chart-4))",
+  }))
+
+  const totalEarned = dailyIncome.reduce((sum, day) => sum + day.amount, 0)
+  const totalGoal = dailyIncome.reduce((sum, day) => sum + day.goal, 0)
   const workDays = dailyIncome.filter((day) => day.isWorkDay)
-  const totalEarned = workDays.reduce((sum, day) => sum + (day.amount || 0), 0)
-  const totalGoal = workDays.reduce((sum, day) => sum + (day.goal || 0), 0)
-  const progress = totalGoal > 0 ? (totalEarned / totalGoal) * 100 : 0
+  const workDaysEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
+  const workDaysGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
-          <Target className="w-5 h-5 text-green-600" />
-          Work Days Progress (Real-time)
-        </CardTitle>
-        <CardDescription>This week's earnings vs goals ({workDays.length} work days)</CardDescription>
+      <CardHeader>
+        <CardTitle className="text-gray-800">Daily Income Progress</CardTitle>
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>
+            Work Days: {currency}
+            {workDaysEarned.toLocaleString()} / {currency}
+            {workDaysGoal.toLocaleString()}
+          </span>
+          <span>{workDays.length} work days</span>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {/* Overall Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Weekly Progress</span>
-              <span className="font-medium">{progress.toFixed(0)}%</span>
-            </div>
-            <Progress value={Math.min(progress, 100)} className="h-3" />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>
-                {currency}
-                {totalEarned.toLocaleString()} earned
-              </span>
-              <span>
-                {currency}
-                {totalGoal.toLocaleString()} goal
-              </span>
-            </div>
-          </div>
-
-          {/* Mini Daily Bars */}
-          <div className="grid grid-cols-7 gap-1">
-            {dailyIncome.map((day, index) => {
-              const dayProgress = (day.goal || 0) > 0 ? ((day.amount || 0) / day.goal) * 100 : 0
-              return (
-                <div key={index} className="text-center">
-                  <div className="text-xs text-gray-600 mb-1">{day.day}</div>
-                  {day.isWorkDay ? (
-                    <>
-                      <div className="h-8 bg-gray-200 rounded relative overflow-hidden">
-                        <div
-                          className={`absolute bottom-0 left-0 right-0 rounded transition-all ${
-                            dayProgress >= 100 ? "bg-green-500" : dayProgress > 0 ? "bg-orange-400" : "bg-gray-300"
-                          }`}
-                          style={{ height: `${Math.min(dayProgress, 100)}%` }}
-                        />
-                        {day.isToday && <div className="absolute inset-0 border-2 border-purple-400 rounded"></div>}
+        <ChartContainer
+          config={{
+            amount: {
+              label: "Earned",
+              color: "hsl(var(--chart-1))",
+            },
+            goal: {
+              label: "Goal",
+              color: "hsl(var(--chart-2))",
+            },
+          }}
+          className="h-[200px]"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <XAxis
+                dataKey="day"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value, index) => {
+                  const data = chartData[index]
+                  return data?.isWorkDay ? value : `${value}*`
+                }}
+              />
+              <YAxis hide />
+              <ChartTooltip
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload
+                    return (
+                      <div className="bg-white p-3 border rounded-lg shadow-lg">
+                        <p className="font-medium">
+                          {label} {data.isToday && "(Today)"}
+                          {!data.isWorkDay && " - Rest Day"}
+                        </p>
+                        <p className="text-sm text-gray-600">Date: {data.date}</p>
+                        <p className="text-sm text-green-600">
+                          Earned: {currency}
+                          {data.amount.toLocaleString()}
+                        </p>
+                        <p className="text-sm text-blue-600">
+                          Goal: {currency}
+                          {data.goal.toLocaleString()}
+                        </p>
+                        {data.isWorkDay && (
+                          <p className="text-sm text-gray-600">
+                            Progress: {((data.amount / data.goal) * 100).toFixed(1)}%
+                          </p>
+                        )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {currency}
-                        {(day.amount || 0).toLocaleString()}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="h-8 bg-gray-100 rounded flex items-center justify-center">
-                        <span className="text-xs text-gray-400">Rest</span>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">-</div>
-                    </>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+                    )
+                  }
+                  return null
+                }}
+              />
+              <Bar dataKey="amount" radius={[4, 4, 0, 0]} />
+              <ReferenceLine y={800} stroke="hsl(var(--chart-2))" strokeDasharray="3 3" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+        <div className="mt-2 text-xs text-gray-500 text-center">
+          * indicates rest day • Dashed line shows standard goal ({currency}800)
         </div>
       </CardContent>
     </Card>

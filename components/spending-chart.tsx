@@ -1,102 +1,126 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { PieChart } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts"
+
+interface BudgetCategory {
+  id: number
+  name: string
+  budgeted: number
+  spent: number
+  color: string
+}
 
 interface SpendingChartProps {
-  budgetCategories: any[]
+  budgetCategories: BudgetCategory[]
   currency: string
 }
 
 export function SpendingChart({ budgetCategories, currency }: SpendingChartProps) {
-  // Real-time calculations
-  const totalBudgeted = budgetCategories.reduce((sum, cat) => sum + (cat.budgeted || 0), 0)
-  const totalSpent = budgetCategories.reduce((sum, cat) => sum + (cat.spent || 0), 0)
-  const overallProgress = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0
+  // Transform data for the pie chart
+  const chartData = budgetCategories.map((category, index) => ({
+    name: category.name,
+    value: category.spent,
+    budgeted: category.budgeted,
+    fill: `hsl(${(index * 137.5) % 360}, 70%, 50%)`, // Generate colors
+  }))
+
+  const totalSpent = budgetCategories.reduce((sum, cat) => sum + cat.spent, 0)
+  const totalBudgeted = budgetCategories.reduce((sum, cat) => sum + cat.budgeted, 0)
+
+  if (budgetCategories.length === 0) {
+    return (
+      <Card className="bg-white/80 backdrop-blur-sm border-0">
+        <CardHeader>
+          <CardTitle className="text-gray-800">Spending Overview</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-gray-500">
+            <p>No spending data available.</p>
+            <p className="text-sm">Add budget categories in Settings to see your spending breakdown.</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
       <CardHeader>
-        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
-          <PieChart className="w-5 h-5 text-purple-600" />
-          Budget Overview
-        </CardTitle>
-        <CardDescription>Your spending vs budget categories (Real-time)</CardDescription>
+        <CardTitle className="text-gray-800">Spending Overview</CardTitle>
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>
+            Total Spent: {currency}
+            {totalSpent.toLocaleString()}
+          </span>
+          <span>
+            Budget: {currency}
+            {totalBudgeted.toLocaleString()}
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {/* Overall Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Total Spent</span>
-              <span className="font-medium">{overallProgress.toFixed(0)}%</span>
-            </div>
-            <Progress value={Math.min(overallProgress, 100)} className="h-3" />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>
-                {currency}
-                {totalSpent.toLocaleString()} spent
-              </span>
-              <span>
-                {currency}
-                {totalBudgeted.toLocaleString()} budgeted
-              </span>
-            </div>
-          </div>
-
-          {/* Category Breakdown */}
-          <div className="space-y-3">
-            {budgetCategories.map((category, index) => {
-              const percentage = (category.budgeted || 0) > 0 ? ((category.spent || 0) / category.budgeted) * 100 : 0
-              const isOverBudget = (category.spent || 0) > (category.budgeted || 0)
-
-              return (
-                <div key={category.id || index} className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3 h-3 rounded-full bg-gradient-to-r ${category.color || "from-gray-400 to-gray-500"}`}
-                      ></div>
-                      <span className="font-medium text-gray-800">{category.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm ${isOverBudget ? "text-red-600" : "text-gray-600"}`}>
-                        {currency}
-                        {(category.spent || 0).toLocaleString()} / {currency}
-                        {(category.budgeted || 0).toLocaleString()}
-                      </span>
-                      {isOverBudget && (
-                        <Badge variant="destructive" className="text-xs">
-                          Over
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <Progress value={Math.min(percentage, 100)} className={`h-2 ${isOverBudget ? "bg-red-100" : ""}`} />
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>{percentage.toFixed(0)}% used</span>
-                    {isOverBudget && (
-                      <span className="text-red-600">
-                        Over by {currency}
-                        {((category.spent || 0) - (category.budgeted || 0)).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {budgetCategories.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              <PieChart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No budget categories yet</p>
-              <p className="text-sm">Add categories in Settings to track spending</p>
-            </div>
-          )}
-        </div>
+        <ChartContainer
+          config={{
+            spending: {
+              label: "Spending",
+            },
+          }}
+          className="h-[300px]"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={100}
+                paddingAngle={2}
+                dataKey="value"
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Pie>
+              <ChartTooltip
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload
+                    return (
+                      <div className="bg-white p-3 border rounded-lg shadow-lg">
+                        <p className="font-medium">{data.name}</p>
+                        <p className="text-sm text-gray-600">
+                          Spent: {currency}
+                          {data.value.toLocaleString()}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Budget: {currency}
+                          {data.budgeted.toLocaleString()}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {((data.value / data.budgeted) * 100).toFixed(1)}% of budget
+                        </p>
+                      </div>
+                    )
+                  }
+                  return null
+                }}
+              />
+              <Legend
+                verticalAlign="bottom"
+                height={36}
+                formatter={(value, entry) => (
+                  <span style={{ color: entry.color }}>
+                    {value} ({currency}
+                    {entry.payload.value.toLocaleString()})
+                  </span>
+                )}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartContainer>
       </CardContent>
     </Card>
   )

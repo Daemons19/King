@@ -97,6 +97,114 @@ export class WeekCalculator {
     // Fallback to first week if no match
     return monthWeeks[0]?.weekNumber || 1
   }
+
+  // Get the current week number using King Ops style (1-based, Monday start)
+  static getCurrentWeekNumber(): number {
+    const now = new Date()
+    const startOfYear = new Date(now.getFullYear(), 0, 1)
+
+    // Find the first Monday of the year
+    const firstMonday = new Date(startOfYear)
+    const dayOfWeek = startOfYear.getDay()
+    const daysToAdd = dayOfWeek === 0 ? 1 : 8 - dayOfWeek // If Sunday, add 1, else add days to next Monday
+    firstMonday.setDate(startOfYear.getDate() + daysToAdd)
+
+    // Calculate weeks since first Monday
+    const diffTime = now.getTime() - firstMonday.getTime()
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    const weekNumber = Math.floor(diffDays / 7) + 1
+
+    return Math.max(1, weekNumber)
+  }
+
+  // Get week range (1st-15th or 16th-end of month)
+  static getCurrentWeekRange(): "first-half" | "second-half" {
+    const now = new Date()
+    const dayOfMonth = now.getDate()
+
+    return dayOfMonth <= 15 ? "first-half" : "second-half"
+  }
+
+  // Get the next available biweekly slot
+  static getNextBiweeklySlot(): { range: "first-half" | "second-half"; month: number; year: number } {
+    const now = new Date()
+    const currentRange = this.getCurrentWeekRange()
+
+    if (currentRange === "first-half") {
+      // Move to second half of current month
+      return {
+        range: "second-half",
+        month: now.getMonth(),
+        year: now.getFullYear(),
+      }
+    } else {
+      // Move to first half of next month
+      const nextMonth = now.getMonth() + 1
+      const nextYear = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear()
+
+      return {
+        range: "first-half",
+        month: nextMonth > 11 ? 0 : nextMonth,
+        year: nextYear,
+      }
+    }
+  }
+
+  // Format week range for display
+  static formatWeekRange(range: "first-half" | "second-half", month: number, year: number): string {
+    const monthNames = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ]
+
+    const monthName = monthNames[month]
+    const rangeText = range === "first-half" ? "1st-15th" : "16th-End"
+
+    return `${monthName} ${rangeText}, ${year}`
+  }
+
+  // Check if a date falls within a specific biweekly range
+  static isDateInRange(date: Date, range: "first-half" | "second-half", month: number, year: number): boolean {
+    if (date.getFullYear() !== year || date.getMonth() !== month) {
+      return false
+    }
+
+    const dayOfMonth = date.getDate()
+
+    if (range === "first-half") {
+      return dayOfMonth >= 1 && dayOfMonth <= 15
+    } else {
+      return dayOfMonth >= 16
+    }
+  }
+
+  // Get all dates in a biweekly range
+  static getDatesInRange(range: "first-half" | "second-half", month: number, year: number): Date[] {
+    const dates: Date[] = []
+
+    if (range === "first-half") {
+      for (let day = 1; day <= 15; day++) {
+        dates.push(new Date(year, month, day))
+      }
+    } else {
+      const lastDay = new Date(year, month + 1, 0).getDate()
+      for (let day = 16; day <= lastDay; day++) {
+        dates.push(new Date(year, month, day))
+      }
+    }
+
+    return dates
+  }
 }
 
 // Helper function to format week display
