@@ -1,99 +1,86 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from "recharts"
+import { Progress } from "@/components/ui/progress"
+import { Target } from "lucide-react"
 
 interface DailyIncomeChartProps {
-  dailyIncome: Array<{
-    day: string
-    amount: number
-    goal: number
-    date: string
-    isToday: boolean
-    isPast: boolean
-    isWorkDay: boolean
-  }>
+  dailyIncome: any[]
   currency: string
 }
 
 export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProps) {
-  // Add visual indicators for chart data
-  const chartData = dailyIncome.map((day) => ({
-    ...day,
-    displayDay: day.isToday ? `${day.day} (Today)` : day.day,
-    opacity: day.isPast || day.isToday ? 1 : 0.5, // Dim future days
-    displayAmount: day.isWorkDay ? day.amount : null, // Don't show amounts for rest days
-    displayGoal: day.isWorkDay ? day.goal : null, // Don't show goals for rest days
-  }))
+  // Calculate work days only
+  const workDays = dailyIncome.filter((day) => day.isWorkDay)
+  const totalEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
+  const totalGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
+  const progress = totalGoal > 0 ? (totalEarned / totalGoal) * 100 : 0
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
-      <CardHeader>
-        <CardTitle className="text-gray-800 flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-green-500 to-blue-500"></div>
-          Daily Earnings - Current Week
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+          <Target className="w-5 h-5 text-green-600" />
+          Work Days Progress
         </CardTitle>
-        <CardDescription>Your daily income vs goals (Work days only - Manila Time)</CardDescription>
+        <CardDescription>This week's earnings vs goals ({workDays.length} work days)</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer
-          config={{
-            displayAmount: { label: "Earned", color: "#10b981" },
-            displayGoal: { label: "Goal", color: "#6b7280" },
-          }}
-          className="h-[200px]"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
-                </linearGradient>
-                <linearGradient id="futureGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="displayDay"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value, index) => {
-                  const day = chartData[index]
-                  if (!day?.isWorkDay) return `${day?.day} (R)` // R for Rest
-                  return day?.isToday ? `${value}*` : value
-                }}
-              />
-              <YAxis />
-              <ChartTooltip
-                content={<ChartTooltipContent />}
-                formatter={(value, name, props) => {
-                  const day = props.payload[0]
-                  if (!day?.isWorkDay) return ["Rest Day", ""]
-                  return [
-                    `${currency}${Number(value).toLocaleString()}`,
-                    name === "displayAmount" ? "Earned" : "Goal",
-                    day?.isToday ? " (Today)" : day?.isPast ? " (Past)" : " (Future)",
-                  ]
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="displayAmount"
-                stroke="#10b981"
-                strokeWidth={3}
-                fill="url(#incomeGradient)"
-                connectNulls={false}
-                opacity={(data) => data.opacity}
-              />
-              <ReferenceLine y={800} stroke="#6b7280" strokeDasharray="5 5" label="Mon-Sat Goal" />
-              <ReferenceLine y={600} stroke="#9ca3af" strokeDasharray="3 3" label="Sunday Goal" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-        <div className="mt-2 text-xs text-gray-500 text-center">
-          * Today | (R) Rest Day | Work days only shown in calculations
+        <div className="space-y-4">
+          {/* Overall Progress */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Weekly Progress</span>
+              <span className="font-medium">{progress.toFixed(0)}%</span>
+            </div>
+            <Progress value={progress} className="h-3" />
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>
+                {currency}
+                {totalEarned.toLocaleString()} earned
+              </span>
+              <span>
+                {currency}
+                {totalGoal.toLocaleString()} goal
+              </span>
+            </div>
+          </div>
+
+          {/* Mini Daily Bars */}
+          <div className="grid grid-cols-7 gap-1">
+            {dailyIncome.map((day, index) => {
+              const dayProgress = day.goal > 0 ? (day.amount / day.goal) * 100 : 0
+              return (
+                <div key={index} className="text-center">
+                  <div className="text-xs text-gray-600 mb-1">{day.day}</div>
+                  {day.isWorkDay ? (
+                    <>
+                      <div className="h-8 bg-gray-200 rounded relative overflow-hidden">
+                        <div
+                          className={`absolute bottom-0 left-0 right-0 rounded transition-all ${
+                            dayProgress >= 100 ? "bg-green-500" : dayProgress > 0 ? "bg-orange-400" : "bg-gray-300"
+                          }`}
+                          style={{ height: `${Math.min(dayProgress, 100)}%` }}
+                        />
+                        {day.isToday && <div className="absolute inset-0 border-2 border-purple-400 rounded"></div>}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {currency}
+                        {day.amount.toLocaleString()}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-8 bg-gray-100 rounded flex items-center justify-center">
+                        <span className="text-xs text-gray-400">Rest</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">-</div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </CardContent>
     </Card>

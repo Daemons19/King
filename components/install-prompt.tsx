@@ -4,22 +4,34 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
 
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[]
+  readonly userChoice: Promise<{
+    outcome: "accepted" | "dismissed"
+    platform: string
+  }>
+  prompt(): Promise<void>
+}
+
 export function InstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [showInstall, setShowInstall] = useState(false)
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [showInstallButton, setShowInstallButton] = useState(false)
 
   useEffect(() => {
     const handler = (e: Event) => {
       e.preventDefault()
-      setDeferredPrompt(e)
-      setShowInstall(true)
+      setDeferredPrompt(e as BeforeInstallPromptEvent)
+      setShowInstallButton(true)
     }
 
     window.addEventListener("beforeinstallprompt", handler)
 
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handler)
+    // Check if app is already installed
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setShowInstallButton(false)
     }
+
+    return () => window.removeEventListener("beforeinstallprompt", handler)
   }, [])
 
   const handleInstall = async () => {
@@ -30,11 +42,11 @@ export function InstallPrompt() {
 
     if (outcome === "accepted") {
       setDeferredPrompt(null)
-      setShowInstall(false)
+      setShowInstallButton(false)
     }
   }
 
-  if (!showInstall) return null
+  if (!showInstallButton) return null
 
   return (
     <Button variant="ghost" size="sm" onClick={handleInstall} className="text-white hover:bg-white/20">

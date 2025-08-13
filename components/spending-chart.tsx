@@ -1,105 +1,90 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { PieChart } from "lucide-react"
 
 interface SpendingChartProps {
-  budgetCategories: Array<{
-    name: string
-    spent: number
-    color: string
-  }>
+  budgetCategories: any[]
   currency: string
 }
 
 export function SpendingChart({ budgetCategories, currency }: SpendingChartProps) {
-  const colorMap: { [key: string]: string } = {
-    "from-emerald-500 to-teal-500": "#10b981",
-    "from-blue-500 to-indigo-500": "#3b82f6",
-    "from-purple-500 to-pink-500": "#8b5cf6",
-    "from-orange-500 to-red-500": "#f97316",
-    "from-yellow-500 to-orange-500": "#eab308",
-  }
-
-  const spendingData = budgetCategories.map((category) => ({
-    name: category.name,
-    value: category.spent,
-    color: colorMap[category.color] || "#6b7280",
-  }))
-
-  if (budgetCategories.length === 0) {
-    return (
-      <Card className="bg-white/80 backdrop-blur-sm border-0">
-        <CardHeader>
-          <CardTitle className="text-gray-800 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-orange-500 to-red-500"></div>
-            Weekly Spending
-          </CardTitle>
-          <CardDescription>Your expenses by category this week</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-gray-500">
-            <p>No spending categories yet.</p>
-            <p className="text-sm">Add categories in Settings to track your expenses.</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
+  const totalBudgeted = budgetCategories.reduce((sum, cat) => sum + cat.budgeted, 0)
+  const totalSpent = budgetCategories.reduce((sum, cat) => sum + cat.spent, 0)
+  const overallProgress = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
       <CardHeader>
-        <CardTitle className="text-gray-800 flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-gradient-to-r from-orange-500 to-red-500"></div>
-          Weekly Spending
+        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+          <PieChart className="w-5 h-5 text-purple-600" />
+          Budget Overview
         </CardTitle>
-        <CardDescription>Your expenses by category this week</CardDescription>
+        <CardDescription>Your spending vs budget categories</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer
-          config={{
-            food: { label: "Food", color: "#10b981" },
-            transport: { label: "Transport", color: "#3b82f6" },
-            entertainment: { label: "Entertainment", color: "#8b5cf6" },
-            shopping: { label: "Shopping", color: "#f97316" },
-            bills: { label: "Bills", color: "#eab308" },
-          }}
-          className="h-[200px]"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={spendingData}
-                cx="50%"
-                cy="50%"
-                innerRadius={40}
-                outerRadius={80}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {spendingData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <ChartTooltip
-                content={<ChartTooltipContent />}
-                formatter={(value) => [`${currency}${Number(value).toLocaleString()}`, "Amount"]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          {spendingData.map((item, index) => (
-            <div key={index} className="flex items-center space-x-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-              <span className="text-xs text-gray-700">
-                {item.name}: {currency}
-                {item.value.toLocaleString()}
+        <div className="space-y-4">
+          {/* Overall Progress */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Total Spent</span>
+              <span className="font-medium">{overallProgress.toFixed(0)}%</span>
+            </div>
+            <Progress value={overallProgress} className="h-3" />
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>
+                {currency}
+                {totalSpent.toLocaleString()} spent
+              </span>
+              <span>
+                {currency}
+                {totalBudgeted.toLocaleString()} budgeted
               </span>
             </div>
-          ))}
+          </div>
+
+          {/* Category Breakdown */}
+          <div className="space-y-3">
+            {budgetCategories.map((category, index) => {
+              const percentage = category.budgeted > 0 ? (category.spent / category.budgeted) * 100 : 0
+              const isOverBudget = category.spent > category.budgeted
+
+              return (
+                <div key={index} className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${category.color}`}></div>
+                      <span className="font-medium text-gray-800">{category.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm ${isOverBudget ? "text-red-600" : "text-gray-600"}`}>
+                        {currency}
+                        {category.spent.toLocaleString()} / {currency}
+                        {category.budgeted.toLocaleString()}
+                      </span>
+                      {isOverBudget && (
+                        <Badge variant="destructive" className="text-xs">
+                          Over
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Progress value={Math.min(percentage, 100)} className={`h-2 ${isOverBudget ? "bg-red-100" : ""}`} />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>{percentage.toFixed(0)}% used</span>
+                    {isOverBudget && (
+                      <span className="text-red-600">
+                        Over by {currency}
+                        {(category.spent - category.budgeted).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </CardContent>
     </Card>

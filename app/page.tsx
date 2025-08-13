@@ -19,11 +19,12 @@ import {
 } from "lucide-react"
 import { SpendingChart } from "../components/spending-chart"
 import { TransactionList } from "../components/transaction-list"
-import { AddTransactionDialog } from "../components/add-transaction-dialog"
 import { SettingsDialog } from "../components/settings-dialog"
 import { DailyIncomeChart } from "../components/daily-income-chart"
 import { WeeklyPayablesCard } from "../components/weekly-payables-card"
 import { InstallPrompt } from "../components/install-prompt"
+import { QuickAddDialog } from "../components/quick-add-dialog"
+import { OptimizedCard } from "../components/optimized-card"
 
 // Helper function to get current Manila time
 const getManilaTime = () => {
@@ -140,6 +141,7 @@ export default function BudgetingApp() {
   const [showSettings, setShowSettings] = useState(false)
   const [activeTab, setActiveTab] = useState("home")
   const [currentTime, setCurrentTime] = useState(getManilaTime())
+  const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
 
   // State with localStorage persistence
   const [dashboardData, setDashboardData] = useState(defaultDashboardData)
@@ -349,31 +351,20 @@ export default function BudgetingApp() {
             <TabsContent value="home" className="space-y-4 mt-0">
               {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-3">
-                <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-0">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <Wallet className="w-5 h-5 text-emerald-200" />
-                      <span className="text-xs text-emerald-200">Balance</span>
-                    </div>
-                    <div className="text-xl font-bold">
-                      {currency}
-                      {dashboardData.totalBalance.toLocaleString()}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-0">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <Target className="w-5 h-5 text-blue-200" />
-                      <span className="text-xs text-blue-200">Work Days</span>
-                    </div>
-                    <div className="text-xl font-bold">
-                      {currency}
-                      {weeklyEarned.toLocaleString()}
-                    </div>
-                  </CardContent>
-                </Card>
+                <OptimizedCard
+                  title="Balance"
+                  value={`${currency}${dashboardData.totalBalance.toLocaleString()}`}
+                  icon={Wallet}
+                  gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
+                  iconColor="text-emerald-200"
+                />
+                <OptimizedCard
+                  title="Work Days"
+                  value={`${currency}${weeklyEarned.toLocaleString()}`}
+                  icon={Target}
+                  gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
+                  iconColor="text-blue-200"
+                />
               </div>
 
               {/* Weekly Progress */}
@@ -405,33 +396,22 @@ export default function BudgetingApp() {
 
               {/* Real-time Projected Savings */}
               <div className="grid grid-cols-2 gap-3">
-                <Card className="bg-gradient-to-br from-green-500 to-emerald-600 text-white border-0">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <TrendingUp className="w-5 h-5 text-green-200" />
-                      <span className="text-xs text-green-200">If Goals Met</span>
-                    </div>
-                    <div className="text-lg font-bold">
-                      {currency}
-                      {projectedWeeklySavings.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-green-200">Projected Savings</div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-orange-500 to-red-600 text-white border-0">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <TrendingDown className="w-5 h-5 text-orange-200" />
-                      <span className="text-xs text-orange-200">Current</span>
-                    </div>
-                    <div className="text-lg font-bold">
-                      {currency}
-                      {actualWeeklySavings.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-orange-200">Actual Savings</div>
-                  </CardContent>
-                </Card>
+                <OptimizedCard
+                  title="If Goals Met"
+                  value={`${currency}${projectedWeeklySavings.toLocaleString()}`}
+                  subtitle="Projected Savings"
+                  icon={TrendingUp}
+                  gradient="bg-gradient-to-br from-green-500 to-emerald-600"
+                  iconColor="text-green-200"
+                />
+                <OptimizedCard
+                  title="Current"
+                  value={`${currency}${actualWeeklySavings.toLocaleString()}`}
+                  subtitle="Actual Savings"
+                  icon={TrendingDown}
+                  gradient="bg-gradient-to-br from-orange-500 to-red-600"
+                  iconColor="text-orange-200"
+                />
               </div>
 
               {/* Real-time Savings Breakdown */}
@@ -689,7 +669,7 @@ export default function BudgetingApp() {
           </Tabs>
         </div>
 
-        {/* Bottom Navigation */}
+        {/* Bottom Navigation - BACK TO ORIGINAL WITH CENTER PLUS */}
         <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-lg border-t border-white/20">
           <div className="grid grid-cols-5 py-2">
             <Button
@@ -710,7 +690,10 @@ export default function BudgetingApp() {
             </Button>
             <Button
               variant="ghost"
-              onClick={() => setShowAddTransaction(true)}
+              onClick={() => {
+                setQuickActionType(null)
+                setShowAddTransaction(true)
+              }}
               className="flex flex-col items-center py-3 text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full mx-2 my-1"
             >
               <Plus className="w-6 h-6" />
@@ -735,10 +718,19 @@ export default function BudgetingApp() {
         </div>
 
         {/* Dialogs */}
-        <AddTransactionDialog
+        <QuickAddDialog
           open={showAddTransaction}
-          onOpenChange={setShowAddTransaction}
+          onOpenChange={(open) => {
+            setShowAddTransaction(open)
+            if (!open) setQuickActionType(null)
+          }}
           currency={currency}
+          weeklyPayables={weeklyPayables}
+          setWeeklyPayables={setWeeklyPayables}
+          initialTab={quickActionType}
+          onPayBill={(billName, amount) => {
+            // Handle bill payment logic if needed
+          }}
           onAddTransaction={(transaction) => {
             setTransactions([transaction, ...transactions])
             // Update daily income if it's an income transaction for today

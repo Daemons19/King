@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Trash2, Plus, AlertTriangle, Copy, Calendar, Edit2, Check, X } from "lucide-react"
 
-// Helper functions (keeping the same as before)
+// Helper functions
 const getManilaTime = () => {
   return new Date().toLocaleString("en-US", {
     timeZone: "Asia/Manila",
@@ -91,6 +91,34 @@ const getCurrentMonthInfo = () => {
   return { year, month, monthName, weeks }
 }
 
+// Auto color assignment for payables
+const getAutoColor = (index: number) => {
+  const colors = [
+    "from-blue-500 to-indigo-500",
+    "from-green-500 to-emerald-500",
+    "from-purple-500 to-violet-500",
+    "from-orange-500 to-red-500",
+    "from-pink-500 to-rose-500",
+    "from-teal-500 to-cyan-500",
+    "from-yellow-500 to-amber-500",
+    "from-indigo-500 to-purple-500",
+  ]
+  return colors[index % colors.length]
+}
+
+// Bi-weekly scheduling logic
+const getBiWeeklySchedule = (currentWeek: number, totalWeeks: number) => {
+  // First payment: Week 1-2 (1st-15th)
+  // Second payment: Week 3-4 (16th-end of month)
+  // If 5 weeks, second payment can extend to week 5
+
+  if (currentWeek <= 2) {
+    return { period: "first", dueWeeks: [1, 2], label: "1st-15th" }
+  } else {
+    return { period: "second", dueWeeks: totalWeeks === 5 ? [3, 4, 5] : [3, 4], label: "16th-End" }
+  }
+}
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -141,7 +169,15 @@ export function SettingsDialog({
     const saved = localStorage.getItem("monthlyPayables")
     if (saved) {
       try {
-        setMonthlyPayables(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          // Convert old array format to new object format
+          const currentMonthInfo = getCurrentMonthInfo()
+          const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
+          setMonthlyPayables({ [currentMonthKey]: parsed })
+        } else {
+          setMonthlyPayables(parsed)
+        }
       } catch {
         setMonthlyPayables({})
       }
@@ -207,13 +243,17 @@ export function SettingsDialog({
   // Weekly payables functions
   const addPayable = () => {
     if (newPayable.name && newPayable.amount) {
+      const newId = Date.now()
+      const autoColor = getAutoColor(weeklyPayables.length)
+
       setWeeklyPayables([
         ...weeklyPayables,
         {
           ...newPayable,
           amount: Number.parseFloat(newPayable.amount) || 0,
-          id: Date.now(),
+          id: newId,
           paidCount: 0,
+          color: autoColor,
         },
       ])
       setNewPayable({
@@ -257,8 +297,14 @@ export function SettingsDialog({
         const newPaidCount = (payable.paidCount || 0) + 1
         let newStatus = "paid"
 
-        if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
-          newStatus = "completed"
+        // Smart completion logic with bi-weekly scheduling
+        if (payable.frequency === "twice-monthly") {
+          const currentWeek = 1 // This would need to be calculated based on current date
+          const schedule = getBiWeeklySchedule(currentWeek, currentMonthInfo.weeks.length)
+
+          if (newPaidCount >= 2) {
+            newStatus = "completed"
+          }
         } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
           newStatus = "completed"
         }
@@ -281,13 +327,17 @@ export function SettingsDialog({
       if (!updated[currentMonthKey]) {
         updated[currentMonthKey] = []
       }
+      const newId = Date.now()
+      const autoColor = getAutoColor(updated[currentMonthKey].length)
+
       updated[currentMonthKey].push({
         ...newMonthlyPayable,
         amount: Number.parseFloat(newMonthlyPayable.amount) || 0,
-        id: Date.now(),
+        id: newId,
         month: currentMonthInfo.monthName,
         year: currentMonthInfo.year,
         paidCount: 0,
+        color: autoColor,
       })
       setMonthlyPayables(updated)
       localStorage.setItem("monthlyPayables", JSON.stringify(updated))
@@ -345,12 +395,13 @@ export function SettingsDialog({
     const nextMonthName = new Date(nextYear, nextMonth).toLocaleString("default", { month: "long" })
 
     const updated = { ...monthlyPayables }
-    updated[nextMonthKey] = currentMonthPayables.map((payable: any) => ({
+    updated[nextMonthKey] = currentMonthPayables.map((payable: any, index: number) => ({
       ...payable,
       id: Date.now() + Math.random(),
       month: nextMonthName,
       year: nextYear,
       paidCount: 0,
+      color: getAutoColor(index),
     }))
 
     setMonthlyPayables(updated)
@@ -364,20 +415,84 @@ export function SettingsDialog({
       return
     }
 
-    const newWeeklyPayables = currentMonthPayables.map((payable: any) => ({
+    // Replace existing weekly payables with monthly ones
+    const newWeeklyPayables = currentMonthPayables.map((payable: any, index: number) => ({
       id: Date.now() + Math.random(),
-      name: `${payable.name}`,
+      name: payable.name,
       amount: payable.amount,
       dueDay: payable.dueDay,
       status: "pending",
-      week: payable.week === "Week 1" || payable.week === "Week 2" ? "This Week" : "Next Week",
+      week: "This Week", // Show all monthly payables as "This Week" so they're visible
       frequency: payable.frequency || "monthly",
       paidCount: 0,
+      color: getAutoColor(index),
     }))
 
     setWeeklyPayables(newWeeklyPayables)
     alert(`Applied ${currentMonthPayables.length} monthly payables to weekly view!`)
   }
+
+  const [newCategory, setNewCategory] = useState({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  const [editingCategory, setEditingCategory] = useState<any>(null)
+
+  // Budget Categories
+  const handleAddCategory = () => {
+    if (!newCategory.name || !newCategory.budgeted) return
+
+    const category = {
+      id: Date.now(),
+      name: newCategory.name,
+      budgeted: Number.parseFloat(newCategory.budgeted),
+      spent: 0,
+      color: newCategory.color,
+    }
+
+    setBudgetCategories([...budgetCategories, category])
+    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  }
+
+  const handleEditCategory = (category: any) => {
+    setEditingCategory(category)
+    setNewCategory({
+      name: category.name,
+      budgeted: category.budgeted.toString(),
+      color: category.color,
+    })
+  }
+
+  const handleUpdateCategory = () => {
+    if (!newCategory.name || !newCategory.budgeted || !editingCategory) return
+
+    const updatedCategories = budgetCategories.map((cat) =>
+      cat.id === editingCategory.id
+        ? {
+            ...cat,
+            name: newCategory.name,
+            budgeted: Number.parseFloat(newCategory.budgeted),
+            color: newCategory.color,
+          }
+        : cat,
+    )
+
+    setBudgetCategories(updatedCategories)
+    setEditingCategory(null)
+    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  }
+
+  const handleDeleteCategory = (categoryId: number) => {
+    if (window.confirm("Delete this category?")) {
+      setBudgetCategories(budgetCategories.filter((cat) => cat.id !== categoryId))
+    }
+  }
+
+  const colorOptions = [
+    { value: "from-red-500 to-pink-500", label: "Red to Pink" },
+    { value: "from-blue-500 to-indigo-500", label: "Blue to Indigo" },
+    { value: "from-green-500 to-emerald-500", label: "Green to Emerald" },
+    { value: "from-purple-500 to-violet-500", label: "Purple to Violet" },
+    { value: "from-yellow-500 to-orange-500", label: "Yellow to Orange" },
+    { value: "from-teal-500 to-cyan-500", label: "Teal to Cyan" },
+  ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -390,9 +505,12 @@ export function SettingsDialog({
         </DialogHeader>
 
         <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-purple-100 p-1 rounded-lg">
+          <TabsList className="grid w-full grid-cols-4 bg-purple-100 p-1 rounded-lg">
             <TabsTrigger value="general" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
               General
+            </TabsTrigger>
+            <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
+              Income
             </TabsTrigger>
             <TabsTrigger value="payables" className="data-[state=active]:bg-white rounded-md text-sm px-3 py-2">
               Payables
@@ -454,28 +572,6 @@ export function SettingsDialog({
               </CardContent>
             </Card>
 
-            {/* Simplified Daily Income */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800">Work Days This Week</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-1">
-                  {dailyIncome.map((day, index) => (
-                    <div key={index} className="text-center">
-                      <div className="text-xs text-gray-600 mb-1">{day.day}</div>
-                      <Checkbox
-                        checked={day.isWorkDay}
-                        onCheckedChange={(checked) => updateDailyIncome(index, "isWorkDay", checked)}
-                        className="mx-auto"
-                      />
-                      {day.isToday && <div className="text-xs text-purple-600 mt-1">Today</div>}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Simplified Budget Categories */}
             <Card className="bg-white/90 border-0">
               <CardHeader>
@@ -520,7 +616,13 @@ export function SettingsDialog({
                   onClick={() =>
                     setBudgetCategories([
                       ...budgetCategories,
-                      { name: "", budgeted: 0, spent: 0, color: "from-blue-500 to-indigo-500", id: Date.now() },
+                      {
+                        name: "",
+                        budgeted: 0,
+                        spent: 0,
+                        color: getAutoColor(budgetCategories.length),
+                        id: Date.now(),
+                      },
                     ])
                   }
                   variant="outline"
@@ -529,6 +631,30 @@ export function SettingsDialog({
                   <Plus className="w-4 h-4 mr-2" />
                   Add Category
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="income" className="space-y-4">
+            {/* Work Days This Week with Checkmarks */}
+            <Card className="bg-white/90 border-0">
+              <CardHeader>
+                <CardTitle className="text-gray-800">Work Days This Week</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-7 gap-1">
+                  {dailyIncome.map((day, index) => (
+                    <div key={index} className="text-center">
+                      <div className="text-xs text-gray-600 mb-1">{day.day}</div>
+                      <Checkbox
+                        checked={day.isWorkDay}
+                        onCheckedChange={(checked) => updateDailyIncome(index, "isWorkDay", checked)}
+                        className="mx-auto"
+                      />
+                      {day.isToday && <div className="text-xs text-purple-600 mt-1">Today</div>}
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -587,7 +713,7 @@ export function SettingsDialog({
                             <SelectContent>
                               <SelectItem value="weekly">Weekly</SelectItem>
                               <SelectItem value="monthly">Monthly</SelectItem>
-                              <SelectItem value="twice-monthly">2x/Month</SelectItem>
+                              <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -608,7 +734,9 @@ export function SettingsDialog({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                      <div
+                        className={`flex items-center justify-between p-3 rounded-lg bg-gradient-to-r ${payable.color || getAutoColor(0)} bg-opacity-10 border`}
+                      >
                         <div className="flex-1">
                           <div className="font-medium text-gray-800">{payable.name}</div>
                           <div className="text-sm text-gray-600">
@@ -617,7 +745,7 @@ export function SettingsDialog({
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             <Badge variant="outline" className="text-xs">
-                              {payable.frequency === "twice-monthly" ? "2x/Month" : payable.frequency}
+                              {payable.frequency === "twice-monthly" ? "Bi-Weekly" : payable.frequency}
                             </Badge>
                             {payable.frequency === "twice-monthly" && (
                               <span className="text-xs text-gray-500">{payable.paidCount || 0}/2</span>
@@ -711,7 +839,7 @@ export function SettingsDialog({
                       <SelectContent>
                         <SelectItem value="weekly">Weekly</SelectItem>
                         <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="twice-monthly">2x/Month</SelectItem>
+                        <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -813,7 +941,7 @@ export function SettingsDialog({
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="monthly">Monthly</SelectItem>
-                                <SelectItem value="twice-monthly">2x/Month</SelectItem>
+                                <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -834,7 +962,9 @@ export function SettingsDialog({
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                        <div
+                          className={`flex items-center justify-between p-3 rounded-lg bg-gradient-to-r ${payable.color || getAutoColor(0)} bg-opacity-10 border`}
+                        >
                           <div className="flex-1">
                             <div className="font-medium text-gray-800">{payable.name}</div>
                             <div className="text-sm text-gray-600">
@@ -842,7 +972,7 @@ export function SettingsDialog({
                               {payable.amount.toLocaleString()} • {payable.dueDay} • {payable.week}
                             </div>
                             <Badge variant="outline" className="text-xs mt-1">
-                              {payable.frequency === "twice-monthly" ? "2x/Month" : "Monthly"}
+                              {payable.frequency === "twice-monthly" ? "Bi-Weekly" : "Monthly"}
                             </Badge>
                           </div>
                           <div className="flex gap-1">
@@ -909,7 +1039,7 @@ export function SettingsDialog({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="twice-monthly">2x/Month</SelectItem>
+                        <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
