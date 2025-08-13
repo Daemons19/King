@@ -1,30 +1,71 @@
-# Personal budget app
+# Personal Budget App
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+A modern, responsive personal budget tracking application built with Next.js, React, and Tailwind CSS.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/geraldtablo007-5862s-projects/v0-personal-budget-app)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/RMxFM5STluJ)
+## Features
 
-## Overview
+- 📊 Daily income tracking with goals
+- 💰 Budget categories management
+- 📅 Weekly and monthly payables
+- 📱 PWA support for mobile installation
+- 🎨 Beautiful gradient UI design
+- 💾 Local storage data persistence
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ 
+- npm or yarn
+
+### Installation
+
+1. Clone the repository:
+\`\`\`bash
+git clone <your-repo-url>
+cd personal-budget-app
+\`\`\`
+
+2. Install dependencies:
+\`\`\`bash
+npm install
+# or
+yarn install
+\`\`\`
+
+3. Run the development server:
+\`\`\`bash
+npm run dev
+# or
+yarn dev
+\`\`\`
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Deployment
 
-Your project is live at:
+### Deploy to Vercel (Recommended)
 
-**[https://vercel.com/geraldtablo007-5862s-projects/v0-personal-budget-app](https://vercel.com/geraldtablo007-5862s-projects/v0-personal-budget-app)**
+1. Push your code to GitHub
+2. Connect your GitHub repository to Vercel
+3. Deploy with one click
 
-## Build your app
+### Manual Deployment
 
-Continue building your app on:
+\`\`\`bash
+npm run build
+npm run start
+\`\`\`
 
-**[https://v0.dev/chat/projects/RMxFM5STluJ](https://v0.dev/chat/projects/RMxFM5STluJ)**
+## Technologies Used
 
-## How It Works
+- **Next.js 14** - React framework
+- **React 18** - UI library
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - UI components
+- **Lucide React** - Icons
+- **Recharts** - Charts and graphs
 
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+## License
+
+MIT License

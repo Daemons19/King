@@ -16,6 +16,7 @@ import {
   CreditCard,
   TrendingUp,
   Trash2,
+  Bell,
 } from "lucide-react"
 import { SpendingChart } from "../components/spending-chart"
 import { TransactionList } from "../components/transaction-list"
@@ -25,6 +26,8 @@ import { WeeklyPayablesCard } from "../components/weekly-payables-card"
 import { InstallPrompt } from "../components/install-prompt"
 import { QuickAddDialog } from "../components/quick-add-dialog"
 import { OptimizedCard } from "../components/optimized-card"
+import { NotificationManager } from "../components/notification-manager"
+import { OfflineIndicator } from "../components/offline-indicator"
 
 // Helper function to get current Manila time
 const getManilaTime = () => {
@@ -297,6 +300,7 @@ export default function BudgetingApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
+      <OfflineIndicator />
       <div className="max-w-md mx-auto bg-white/10 backdrop-blur-lg min-h-screen">
         {/* App Header */}
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
@@ -666,18 +670,22 @@ export default function BudgetingApp() {
 
               <TransactionList transactions={transactions} currency={currency} />
             </TabsContent>
+
+            <TabsContent value="notifications" className="space-y-4 mt-0">
+              <NotificationManager weeklyPayables={weeklyPayables} dailyIncome={dailyIncome} currency={currency} />
+            </TabsContent>
           </Tabs>
         </div>
 
-        {/* Bottom Navigation - BACK TO ORIGINAL WITH CENTER PLUS */}
+        {/* Bottom Navigation - Updated with Notifications tab */}
         <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-lg border-t border-white/20">
-          <div className="grid grid-cols-5 py-2">
+          <div className="grid grid-cols-6 py-2">
             <Button
               variant="ghost"
               onClick={() => setActiveTab("home")}
               className={`flex flex-col items-center py-3 ${activeTab === "home" ? "text-purple-600" : "text-gray-600"}`}
             >
-              <Home className="w-5 h-5 mb-1" />
+              <Home className="w-4 h-4 mb-1" />
               <span className="text-xs">Home</span>
             </Button>
             <Button
@@ -685,7 +693,7 @@ export default function BudgetingApp() {
               onClick={() => setActiveTab("income")}
               className={`flex flex-col items-center py-3 ${activeTab === "income" ? "text-purple-600" : "text-gray-600"}`}
             >
-              <DollarSign className="w-5 h-5 mb-1" />
+              <DollarSign className="w-4 h-4 mb-1" />
               <span className="text-xs">Income</span>
             </Button>
             <Button
@@ -694,16 +702,16 @@ export default function BudgetingApp() {
                 setQuickActionType(null)
                 setShowAddTransaction(true)
               }}
-              className="flex flex-col items-center py-3 text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full mx-2 my-1"
+              className="flex flex-col items-center py-3 text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full mx-1 my-1"
             >
-              <Plus className="w-6 h-6" />
+              <Plus className="w-5 h-5" />
             </Button>
             <Button
               variant="ghost"
               onClick={() => setActiveTab("expenses")}
               className={`flex flex-col items-center py-3 ${activeTab === "expenses" ? "text-purple-600" : "text-gray-600"}`}
             >
-              <TrendingDown className="w-5 h-5 mb-1" />
+              <TrendingDown className="w-4 h-4 mb-1" />
               <span className="text-xs">Expenses</span>
             </Button>
             <Button
@@ -711,8 +719,16 @@ export default function BudgetingApp() {
               onClick={() => setActiveTab("payables")}
               className={`flex flex-col items-center py-3 ${activeTab === "payables" ? "text-purple-600" : "text-gray-600"}`}
             >
-              <CreditCard className="w-5 h-5 mb-1" />
+              <CreditCard className="w-4 h-4 mb-1" />
               <span className="text-xs">Bills</span>
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setActiveTab("notifications")}
+              className={`flex flex-col items-center py-3 ${activeTab === "notifications" ? "text-purple-600" : "text-gray-600"}`}
+            >
+              <Bell className="w-4 h-4 mb-1" />
+              <span className="text-xs">Alerts</span>
             </Button>
           </div>
         </div>

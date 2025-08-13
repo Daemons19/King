@@ -1,7 +1,7 @@
 {
   "name": "Daily Budget Tracker",
   "short_name": "Budget Tracker",
-  "description": "Track your daily income, expenses, and bills with ease",
+  "description": "Track your daily income, expenses, and bills with ease - Works offline!",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -23,5 +23,21 @@
   ],
   "categories": ["finance", "productivity", "utilities"],
   "lang": "en",
-  "dir": "ltr"
+  "dir": "ltr",
+  "shortcuts": [
+    {
+      "name": "Add Income",
+      "short_name": "Income",
+      "description": "Quickly add daily income",
+      "url": "/?action=add-income",
+      "icons": [{ "src": "/placeholder-logo.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Pay Bills",
+      "short_name": "Bills",
+      "description": "View and pay bills",
+      "url": "/?action=pay-bills",
+      "icons": [{ "src": "/placeholder-logo.png", "sizes": "96x96" }]
+    }
+  ]
 }

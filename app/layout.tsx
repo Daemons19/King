@@ -2,12 +2,13 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Daily Budget Tracker",
-  description: "Track your daily income, expenses, and bills with ease",
+  description: "Track your daily income, expenses, and bills with ease - Works offline!",
   manifest: "/manifest.json",
   themeColor: "#8b5cf6",
   appleWebApp: {
@@ -42,12 +43,19 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         {children}
+        <Toaster />
         <script
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js');
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(function(registration) {
+                      console.log('SW registered: ', registration);
+                    })
+                    .catch(function(registrationError) {
+                      console.log('SW registration failed: ', registrationError);
+                    });
                 });
               }
             `,
