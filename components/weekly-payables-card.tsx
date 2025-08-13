@@ -161,9 +161,13 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
     setWeeklyPayables(updatedPayables)
   }
 
+  // Real-time calculations
   const totalPending = weeklyPayables
     .filter((payable) => payable.status === "pending")
-    .reduce((sum, payable) => sum + payable.amount, 0)
+    .reduce((sum, payable) => sum + (payable.amount || 0), 0)
+
+  const dueTodayCount = weeklyPayables.filter((bill) => getBillStatus(bill) === "due-today").length
+  const overdueCount = weeklyPayables.filter((bill) => getBillStatus(bill) === "overdue").length
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -172,11 +176,13 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
           <div>
             <CardTitle className="text-gray-800 flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-blue-600" />
-              Weekly Payables
+              Weekly Payables (Real-time)
             </CardTitle>
             <CardDescription>
               Total pending: {currency}
               {totalPending.toLocaleString()}
+              {dueTodayCount > 0 && <span className="text-orange-600 ml-2">• {dueTodayCount} due today</span>}
+              {overdueCount > 0 && <span className="text-red-600 ml-2">• {overdueCount} overdue</span>}
             </CardDescription>
           </div>
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -288,7 +294,7 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
                     </div>
                     <p className="text-sm text-gray-600">
                       {currency}
-                      {payable.amount.toLocaleString()} • {payable.dueDay}
+                      {(payable.amount || 0).toLocaleString()} • {payable.dueDay}
                     </p>
                     {payable.frequency && (
                       <Badge variant="outline" className="text-xs mt-1">

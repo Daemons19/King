@@ -91,11 +91,11 @@ const defaultDashboardData = {
 }
 
 const defaultBudgetCategories = [
-  { name: "Food", budgeted: 600, spent: 520, color: "from-emerald-500 to-teal-500" },
-  { name: "Transport", budgeted: 320, spent: 265, color: "from-blue-500 to-indigo-500" },
-  { name: "Entertainment", budgeted: 240, spent: 180, color: "from-purple-500 to-pink-500" },
-  { name: "Shopping", budgeted: 400, spent: 350, color: "from-orange-500 to-red-500" },
-  { name: "Bills", budgeted: 800, spent: 720, color: "from-yellow-500 to-orange-500" },
+  { id: 1, name: "Food", budgeted: 600, spent: 520, color: "from-emerald-500 to-teal-500" },
+  { id: 2, name: "Transport", budgeted: 320, spent: 265, color: "from-blue-500 to-indigo-500" },
+  { id: 3, name: "Entertainment", budgeted: 240, spent: 180, color: "from-purple-500 to-pink-500" },
+  { id: 4, name: "Shopping", budgeted: 400, spent: 350, color: "from-orange-500 to-red-500" },
+  { id: 5, name: "Bills", budgeted: 800, spent: 720, color: "from-yellow-500 to-orange-500" },
 ]
 
 const defaultWeeklyPayables = [
@@ -142,6 +142,7 @@ const initializeDailyIncome = () => {
 export default function BudgetingApp() {
   const [showAddTransaction, setShowAddTransaction] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [activeTab, setActiveTab] = useState("home")
   const [currentTime, setCurrentTime] = useState(getManilaTime())
   const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
@@ -207,12 +208,61 @@ export default function BudgetingApp() {
     localStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
   }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome])
 
+  // Real-time calculations - recalculated on every render
+  const currency = dashboardData.currency || "₱"
+
+  // Work days calculations
+  const workDays = dailyIncome.filter((day) => day.isWorkDay)
+  const weeklyEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
+  const weeklyGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
+  const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
+
+  // Today's data
+  const todayData = dailyIncome.find((day) => day.isToday) || dailyIncome[0]
+  const todayIncome = todayData?.amount || 0
+  const todayGoal = todayData?.goal || dashboardData.dailyIncomeGoal
+
+  // Real-time expense calculations from transactions
+  const currentWeekExpenses = transactions
+    .filter((t) => t.type === "expense" && new Date(t.date) >= new Date(getWeekStartManila()))
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+
+  // Update budget categories spent amounts from transactions
+  const updatedBudgetCategories = budgetCategories.map((category) => {
+    const categoryExpenses = transactions
+      .filter((t) => t.type === "expense" && t.category === category.name)
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+    return { ...category, spent: categoryExpenses }
+  })
+
+  // Real-time payables calculations
+  const totalWeeklyPayables = weeklyPayables.reduce((sum, payable) => sum + payable.amount, 0)
+  const pendingPayables = weeklyPayables.filter((p) => p.status === "pending")
+  const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + payable.amount, 0)
+
+  // Calculate remaining work days and their potential earnings
+  const remainingWorkDays = workDays.filter((day) => !day.isPast && !day.isToday)
+  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + day.goal, 0)
+
+  // Projected total if goals are met for remaining work days
+  const projectedWeeklyTotal = weeklyEarned + potentialRemainingEarnings
+  const projectedWeeklySavings = projectedWeeklyTotal - totalWeeklyPayables - currentWeekExpenses
+
+  // Current actual savings (what you have now)
+  const actualWeeklySavings = weeklyEarned - totalWeeklyPayables - currentWeekExpenses
+
+  // Real-time balance calculation
+  const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+  const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0)
+  const calculatedBalance = dashboardData.totalBalance + totalIncome - totalExpenses
+
   // Clear all data function
   const clearAllData = () => {
     if (window.confirm("Are you sure you want to clear all data? This action cannot be undone.")) {
       // Clear localStorage
       localStorage.removeItem("dailyBudgetAppData")
       localStorage.removeItem("monthlyPayables")
+      localStorage.removeItem("biweeklyPayables")
 
       // Reset all state to empty/default values
       setDashboardData({
@@ -245,16 +295,12 @@ export default function BudgetingApp() {
   const clearBudgetCategories = () => {
     if (window.confirm("Clear all budget categories?")) {
       setBudgetCategories([])
-      // Also reset dashboard weekly expenses to 0
-      setDashboardData((prev) => ({ ...prev, weeklyExpenses: 0 }))
     }
   }
 
   const clearWeeklyPayables = () => {
     if (window.confirm("Clear all weekly payables?")) {
       setWeeklyPayables([])
-      // Also reset dashboard weekly payables to 0
-      setDashboardData((prev) => ({ ...prev, weeklyPayables: 0 }))
     }
   }
 
@@ -265,43 +311,13 @@ export default function BudgetingApp() {
         amount: 0,
       }))
       setDailyIncome(resetIncome)
-      // Also reset total balance to 0
-      setDashboardData((prev) => ({ ...prev, totalBalance: 0 }))
     }
   }
-
-  // Real-time calculations based on current week (only work days)
-  const workDays = dailyIncome.filter((day) => day.isWorkDay)
-  const weeklyEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
-  const weeklyGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
-  const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
-
-  // Today's data
-  const todayData = dailyIncome.find((day) => day.isToday) || dailyIncome[0]
-  const todayIncome = todayData?.amount || 0
-  const todayGoal = todayData?.goal || dashboardData.dailyIncomeGoal
-
-  // Real-time projected savings calculation (only work days)
-  const totalWeeklyPayables = weeklyPayables.reduce((sum, payable) => sum + payable.amount, 0)
-  const weeklyExpenses = budgetCategories.reduce((sum, cat) => sum + cat.spent, 0)
-
-  // Calculate remaining work days and their potential earnings
-  const remainingWorkDays = workDays.filter((day) => !day.isPast && !day.isToday)
-  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + day.goal, 0)
-
-  // Projected total if goals are met for remaining work days
-  const projectedWeeklyTotal = weeklyEarned + potentialRemainingEarnings
-  const projectedWeeklySavings = projectedWeeklyTotal - totalWeeklyPayables - weeklyExpenses
-
-  // Current actual savings (what you have now)
-  const actualWeeklySavings = weeklyEarned - totalWeeklyPayables - weeklyExpenses
-
-  const currency = dashboardData.currency || "₱"
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
       <OfflineIndicator />
-      <div className="max-w-md mx-auto bg-white/10 backdrop-blur-lg min-h-screen">
+      <div className="max-w-md mx-auto bg-white/10 backdrop-blur-lg min-h-screen relative">
         {/* App Header */}
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
@@ -310,6 +326,14 @@ export default function BudgetingApp() {
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowNotifications(true)}
+                className="text-white hover:bg-white/20"
+              >
+                <Bell className="w-5 h-5" />
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -322,7 +346,7 @@ export default function BudgetingApp() {
             </div>
           </div>
 
-          {/* Today's Summary */}
+          {/* Today's Summary - Real-time */}
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-purple-100">
@@ -349,15 +373,15 @@ export default function BudgetingApp() {
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="p-4">
+        {/* Main Content with bottom padding for navigation */}
+        <div className="p-4 pb-28">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <TabsContent value="home" className="space-y-4 mt-0">
-              {/* Quick Stats */}
+              {/* Quick Stats - Real-time */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="Balance"
-                  value={`${currency}${dashboardData.totalBalance.toLocaleString()}`}
+                  value={`${currency}${calculatedBalance.toLocaleString()}`}
                   icon={Wallet}
                   gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
                   iconColor="text-emerald-200"
@@ -371,7 +395,7 @@ export default function BudgetingApp() {
                 />
               </div>
 
-              {/* Weekly Progress */}
+              {/* Weekly Progress - Real-time */}
               <Card className="bg-white/80 backdrop-blur-sm border-0">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg text-gray-800">Weekly Progress (Work Days Only)</CardTitle>
@@ -455,14 +479,14 @@ export default function BudgetingApp() {
                       <span className="text-sm text-gray-600">Weekly Payables</span>
                       <span className="font-medium text-red-600">
                         -{currency}
-                        {totalWeeklyPayables.toLocaleString()}
+                        {totalPendingPayables.toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Weekly Expenses</span>
                       <span className="font-medium text-red-600">
                         -{currency}
-                        {weeklyExpenses.toLocaleString()}
+                        {currentWeekExpenses.toLocaleString()}
                       </span>
                     </div>
                     <div className="border-t pt-2">
@@ -480,7 +504,7 @@ export default function BudgetingApp() {
                 </CardContent>
               </Card>
 
-              {/* Daily Income Chart */}
+              {/* Daily Income Chart - Real-time */}
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
 
               {/* Quick Actions */}
@@ -589,21 +613,21 @@ export default function BudgetingApp() {
                 </Button>
               </div>
 
-              <SpendingChart budgetCategories={budgetCategories} currency={currency} />
+              <SpendingChart budgetCategories={updatedBudgetCategories} currency={currency} />
 
               <Card className="bg-white/80 backdrop-blur-sm border-0">
                 <CardHeader>
                   <CardTitle className="text-gray-800">Budget Categories</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {budgetCategories.length === 0 ? (
+                  {updatedBudgetCategories.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <p>No budget categories yet.</p>
                       <p className="text-sm">Add categories in Settings to track your spending.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {budgetCategories.map((category, index) => {
+                      {updatedBudgetCategories.map((category, index) => {
                         const percentage = (category.spent / category.budgeted) * 100
                         const isOverBudget = category.spent > category.budgeted
 
@@ -670,66 +694,64 @@ export default function BudgetingApp() {
 
               <TransactionList transactions={transactions} currency={currency} />
             </TabsContent>
-
-            <TabsContent value="notifications" className="space-y-4 mt-0">
-              <NotificationManager weeklyPayables={weeklyPayables} dailyIncome={dailyIncome} currency={currency} />
-            </TabsContent>
           </Tabs>
         </div>
 
-        {/* Bottom Navigation - Updated with Notifications tab */}
-        <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-lg border-t border-white/20">
-          <div className="grid grid-cols-6 py-2">
-            <Button
-              variant="ghost"
-              onClick={() => setActiveTab("home")}
-              className={`flex flex-col items-center py-3 ${activeTab === "home" ? "text-purple-600" : "text-gray-600"}`}
-            >
-              <Home className="w-4 h-4 mb-1" />
-              <span className="text-xs">Home</span>
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setActiveTab("income")}
-              className={`flex flex-col items-center py-3 ${activeTab === "income" ? "text-purple-600" : "text-gray-600"}`}
-            >
-              <DollarSign className="w-4 h-4 mb-1" />
-              <span className="text-xs">Income</span>
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuickActionType(null)
-                setShowAddTransaction(true)
-              }}
-              className="flex flex-col items-center py-3 text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full mx-1 my-1"
-            >
-              <Plus className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setActiveTab("expenses")}
-              className={`flex flex-col items-center py-3 ${activeTab === "expenses" ? "text-purple-600" : "text-gray-600"}`}
-            >
-              <TrendingDown className="w-4 h-4 mb-1" />
-              <span className="text-xs">Expenses</span>
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setActiveTab("payables")}
-              className={`flex flex-col items-center py-3 ${activeTab === "payables" ? "text-purple-600" : "text-gray-600"}`}
-            >
-              <CreditCard className="w-4 h-4 mb-1" />
-              <span className="text-xs">Bills</span>
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setActiveTab("notifications")}
-              className={`flex flex-col items-center py-3 ${activeTab === "notifications" ? "text-purple-600" : "text-gray-600"}`}
-            >
-              <Bell className="w-4 h-4 mb-1" />
-              <span className="text-xs">Alerts</span>
-            </Button>
+        {/* Bottom Navigation - Fixed with higher z-index */}
+        <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur-lg border-t border-white/20 shadow-lg">
+          <div className="max-w-md mx-auto flex items-center justify-center py-2 px-4">
+            {/* Left side buttons */}
+            <div className="flex flex-1 justify-around">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("home")}
+                className={`flex flex-col items-center py-3 ${activeTab === "home" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <Home className="w-4 h-4 mb-1" />
+                <span className="text-xs">Home</span>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("income")}
+                className={`flex flex-col items-center py-3 ${activeTab === "income" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <DollarSign className="w-4 h-4 mb-1" />
+                <span className="text-xs">Income</span>
+              </Button>
+            </div>
+
+            {/* Center Plus Button */}
+            <div className="mx-4">
+              <Button
+                onClick={() => {
+                  setQuickActionType(null)
+                  setShowAddTransaction(true)
+                }}
+                className="w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+              >
+                <Plus className="w-6 h-6" />
+              </Button>
+            </div>
+
+            {/* Right side buttons */}
+            <div className="flex flex-1 justify-around">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("expenses")}
+                className={`flex flex-col items-center py-3 ${activeTab === "expenses" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <TrendingDown className="w-4 h-4 mb-1" />
+                <span className="text-xs">Expenses</span>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("payables")}
+                className={`flex flex-col items-center py-3 ${activeTab === "payables" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <CreditCard className="w-4 h-4 mb-1" />
+                <span className="text-xs">Bills</span>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -782,8 +804,29 @@ export default function BudgetingApp() {
           clearAllData={clearAllData}
         />
 
-        {/* Bottom padding for navigation */}
-        <div className="h-20"></div>
+        {/* Notifications Dialog */}
+        {showNotifications && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 text-white">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold">Notifications & Alerts</h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowNotifications(false)}
+                    className="text-white hover:bg-white/20"
+                  >
+                    ✕
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[60vh]">
+                <NotificationManager weeklyPayables={weeklyPayables} dailyIncome={dailyIncome} currency={currency} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

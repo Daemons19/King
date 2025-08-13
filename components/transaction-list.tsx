@@ -11,10 +11,10 @@ interface TransactionListProps {
 }
 
 export function TransactionList({ transactions, currency }: TransactionListProps) {
-  // Sort transactions by date (newest first)
+  // Sort transactions by date (newest first) - real-time sorting
   const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-  // Group transactions by date
+  // Group transactions by date - real-time grouping
   const groupedTransactions = sortedTransactions.reduce(
     (groups, transaction) => {
       const date = transaction.date
@@ -26,6 +26,15 @@ export function TransactionList({ transactions, currency }: TransactionListProps
     },
     {} as Record<string, any[]>,
   )
+
+  // Real-time calculations
+  const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + (t.amount || 0), 0)
+
+  const totalExpenses = transactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
+
+  const netAmount = totalIncome - totalExpenses
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -51,9 +60,13 @@ export function TransactionList({ transactions, currency }: TransactionListProps
       <CardHeader>
         <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
           <Calendar className="w-5 h-5 text-blue-600" />
-          Transaction History
+          Transaction History (Real-time)
         </CardTitle>
-        <CardDescription>Your recent income and expenses</CardDescription>
+        <CardDescription>
+          {transactions.length} transactions • Net: {currency}
+          {netAmount.toLocaleString()}
+          {netAmount >= 0 ? " 📈" : " 📉"}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {transactions.length === 0 ? (
@@ -108,7 +121,7 @@ export function TransactionList({ transactions, currency }: TransactionListProps
                           >
                             {transaction.type === "income" ? "+" : ""}
                             {currency}
-                            {Math.abs(transaction.amount).toLocaleString()}
+                            {Math.abs(transaction.amount || 0).toLocaleString()}
                           </p>
                         </div>
                       </div>

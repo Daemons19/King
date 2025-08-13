@@ -1,199 +1,134 @@
 "use client"
 
-// King Ops Week Numbering System
-// Weeks run Monday to Saturday (Sunday is not part of any week)
-// Week numbers are continuous from the previous month
-
-export interface WeekInfo {
-  weekNumber: number
-  startDate: Date
-  endDate: Date
-  monthLabel: string
-  dateRange: string
-  isCurrentWeek: boolean
-}
-
-export interface BiweeklyPeriod {
-  period: "first" | "second"
-  dateRange: string
-  weekNumbers: number[]
-  dueWeek: number
-  fallbackWeek?: number
-}
-
+// King Ops Week System: Monday-Saturday weeks (Sunday excluded)
 export class WeekCalculator {
   // Get the Monday of a given date
   static getMondayOfWeek(date: Date): Date {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
-    return new Date(d.setDate(diff))
+    const day = date.getDay()
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1) // Adjust for Sunday
+    return new Date(date.getFullYear(), date.getMonth(), diff)
   }
 
-  // Get week number based on continuous counting from previous month
-  static getWeekNumber(date: Date): number {
+  // Get Saturday of a given date's week
+  static getSaturdayOfWeek(date: Date): Date {
     const monday = this.getMondayOfWeek(date)
-    const year = monday.getFullYear()
-    const month = monday.getMonth()
-
-    // Find the first Monday of the year
-    const firstMonday = new Date(year, 0, 1)
-    while (firstMonday.getDay() !== 1) {
-      firstMonday.setDate(firstMonday.getDate() + 1)
-    }
-
-    // Calculate week number from first Monday of year
-    const diffTime = monday.getTime() - firstMonday.getTime()
-    const diffWeeks = Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000))
-
-    return diffWeeks + 1
+    return new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 5)
   }
 
-  // Get all weeks for a specific month with King Ops numbering
-  static getMonthWeeks(year: number, month: number): WeekInfo[] {
-    const weeks: WeekInfo[] = []
+  // Get all weeks in a month using King Ops system
+  static getMonthWeeks(year: number, month: number) {
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
+    const today = new Date()
 
-    // Find the first Monday that affects this month
-    const currentMonday = this.getMondayOfWeek(firstDay)
+    const weeks = []
+    let weekNumber = 1
 
-    // If the first Monday is before the month starts, it might still be relevant
-    if (currentMonday < firstDay) {
-      const saturday = new Date(currentMonday)
-      saturday.setDate(saturday.getDate() + 5) // Saturday of that week
+    // Start from the first Monday of or before the month
+    let currentMonday = this.getMondayOfWeek(firstDay)
 
-      // Only include if Saturday is in this month or later
-      if (saturday >= firstDay) {
-        // This week spans into our month, so include it
-      } else {
-        // Move to next Monday
-        currentMonday.setDate(currentMonday.getDate() + 7)
-      }
+    // If the first Monday is in the previous month, it continues the week numbering
+    if (currentMonday.getMonth() !== month) {
+      // Get the previous month's last week number and continue
+      const prevMonth = month === 0 ? 11 : month - 1
+      const prevYear = month === 0 ? year - 1 : year
+      const prevMonthWeeks = this.getMonthWeeks(prevYear, prevMonth)
+      weekNumber = prevMonthWeeks.length + 1
     }
 
-    const today = new Date()
-    const currentWeekNumber = this.getWeekNumber(today)
-
     while (currentMonday <= lastDay) {
-      const saturday = new Date(currentMonday)
-      saturday.setDate(saturday.getDate() + 5) // Saturday
+      const saturday = this.getSaturdayOfWeek(currentMonday)
 
-      const weekNumber = this.getWeekNumber(currentMonday)
-      const monthLabel = new Date(year, month).toLocaleString("default", { month: "long" })
+      // Check if this week overlaps with the current month
+      if (currentMonday.getMonth() === month || saturday.getMonth() === month) {
+        const isCurrentWeek = today >= currentMonday && today <= saturday
 
-      weeks.push({
-        weekNumber,
-        startDate: new Date(currentMonday),
-        endDate: new Date(saturday),
-        monthLabel,
-        dateRange: `${currentMonday.getDate()}-${saturday.getDate()}`,
-        isCurrentWeek: weekNumber === currentWeekNumber,
-      })
+        weeks.push({
+          weekNumber,
+          startDate: new Date(currentMonday),
+          endDate: new Date(saturday),
+          isCurrentWeek,
+          monthOverlap: {
+            startsInMonth: currentMonday.getMonth() === month,
+            endsInMonth: saturday.getMonth() === month,
+          },
+        })
+        weekNumber++
+      }
 
       // Move to next Monday
-      currentMonday.setDate(currentMonday.getDate() + 7)
+      currentMonday = new Date(currentMonday.getFullYear(), currentMonday.getMonth(), currentMonday.getDate() + 7)
     }
 
     return weeks
   }
 
-  // Get biweekly periods for a month
-  static getBiweeklyPeriods(year: number, month: number): BiweeklyPeriod[] {
-    const weeks = this.getMonthWeeks(year, month)
-    const lastDay = new Date(year, month + 1, 0).getDate()
+  // Get current week info
+  static getCurrentWeekInfo() {
+    const today = new Date()
+    const monday = this.getMondayOfWeek(today)
+    const saturday = this.getSaturdayOfWeek(today)
 
-    // First period: Days 1-15
-    const firstPeriodWeeks = weeks.filter((week) => {
-      const weekStart = week.startDate.getDate()
-      const weekEnd = week.endDate.getDate()
+    const year = today.getFullYear()
+    const month = today.getMonth()
+    const monthWeeks = this.getMonthWeeks(year, month)
 
-      // Week overlaps with days 1-15
-      return weekStart <= 15 || (weekEnd <= 15 && weekStart <= 15)
-    })
+    const currentWeek = monthWeeks.find((week) => week.isCurrentWeek)
 
-    // Second period: Days 16-end of month
-    const secondPeriodWeeks = weeks.filter((week) => {
-      const weekStart = week.startDate.getDate()
-
-      // Week starts on or after day 16
-      return weekStart >= 16
-    })
-
-    return [
-      {
-        period: "first",
-        dateRange: "1-15",
-        weekNumbers: firstPeriodWeeks.map((w) => w.weekNumber),
-        dueWeek: firstPeriodWeeks[0]?.weekNumber || 1,
-        fallbackWeek: firstPeriodWeeks[1]?.weekNumber,
-      },
-      {
-        period: "second",
-        dateRange: `16-${lastDay}`,
-        weekNumbers: secondPeriodWeeks.map((w) => w.weekNumber),
-        dueWeek: secondPeriodWeeks[0]?.weekNumber || 3,
-        fallbackWeek: secondPeriodWeeks[1]?.weekNumber,
-      },
-    ]
+    return {
+      weekNumber: currentWeek?.weekNumber || 1,
+      startDate: monday,
+      endDate: saturday,
+      monthWeeks,
+    }
   }
 
-  // Get week for a specific date
-  static getWeekForDate(date: Date, year: number, month: number): number {
-    const weeks = this.getMonthWeeks(year, month)
-    const targetDate = new Date(date)
+  // Assign week for monthly payable based on due date
+  static assignWeekForMonthlyPayable(dueDate: string, year: number, month: number): number {
+    const targetDate = new Date(dueDate)
+    const monthWeeks = this.getMonthWeeks(year, month)
 
-    for (const week of weeks) {
+    for (const week of monthWeeks) {
       if (targetDate >= week.startDate && targetDate <= week.endDate) {
         return week.weekNumber
       }
     }
 
-    // If not found in current month, calculate directly
-    return this.getWeekNumber(targetDate)
-  }
-
-  // Auto-assign week for monthly payable based on due date
-  static assignWeekForMonthlyPayable(dueDate: string, year: number, month: number): number {
-    const date = new Date(dueDate)
-    return this.getWeekForDate(date, year, month)
-  }
-
-  // Get current week info
-  static getCurrentWeekInfo(): WeekInfo {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = today.getMonth()
-    const weeks = this.getMonthWeeks(year, month)
-
-    return weeks.find((w) => w.isCurrentWeek) || weeks[0]
-  }
-
-  // Check if a date falls on Sunday (not part of any week)
-  static isSunday(date: Date): boolean {
-    return date.getDay() === 0
-  }
-
-  // Get next valid work day (skip Sunday)
-  static getNextWorkDay(date: Date): Date {
-    const nextDay = new Date(date)
-    nextDay.setDate(nextDay.getDate() + 1)
-
-    if (this.isSunday(nextDay)) {
-      nextDay.setDate(nextDay.getDate() + 1) // Skip to Monday
-    }
-
-    return nextDay
+    // Fallback to first week if no match
+    return monthWeeks[0]?.weekNumber || 1
   }
 }
 
 // Helper function to format week display
-export function formatWeekDisplay(weekInfo: WeekInfo): string {
-  return `Week ${weekInfo.weekNumber} (${weekInfo.dateRange})`
+export function formatWeekDisplay(week: any): string {
+  return `Week ${week.weekNumber}`
 }
 
-// Helper function to get biweekly schedule for current month
-export function getCurrentBiweeklySchedule(): BiweeklyPeriod[] {
+// Get biweekly schedule for current month
+export function getCurrentBiweeklySchedule() {
   const today = new Date()
-  return WeekCalculator.getBiweeklyPeriods(today.getFullYear(), today.getMonth())
+  const year = today.getFullYear()
+  const month = today.getMonth()
+  const monthWeeks = WeekCalculator.getMonthWeeks(year, month)
+
+  // First period: Days 1-15 (Week 1, fallback Week 2)
+  // Second period: Days 16-End (Week 3, fallback Week 4 or 5)
+
+  const firstPeriod = {
+    period: "first" as const,
+    dateRange: "1-15",
+    weekNumbers: [1, 2],
+    dueWeek: 1,
+    fallbackWeek: 2,
+  }
+
+  const secondPeriod = {
+    period: "second" as const,
+    dateRange: "16-End",
+    weekNumbers: monthWeeks.length >= 5 ? [3, 4, 5] : [3, 4],
+    dueWeek: 3,
+    fallbackWeek: monthWeeks.length >= 5 ? 4 : 4,
+  }
+
+  return [firstPeriod, secondPeriod]
 }

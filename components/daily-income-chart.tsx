@@ -10,10 +10,10 @@ interface DailyIncomeChartProps {
 }
 
 export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProps) {
-  // Calculate work days only
+  // Real-time calculations - recalculated on every render
   const workDays = dailyIncome.filter((day) => day.isWorkDay)
-  const totalEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
-  const totalGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
+  const totalEarned = workDays.reduce((sum, day) => sum + (day.amount || 0), 0)
+  const totalGoal = workDays.reduce((sum, day) => sum + (day.goal || 0), 0)
   const progress = totalGoal > 0 ? (totalEarned / totalGoal) * 100 : 0
 
   return (
@@ -21,7 +21,7 @@ export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProp
       <CardHeader className="pb-3">
         <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
           <Target className="w-5 h-5 text-green-600" />
-          Work Days Progress
+          Work Days Progress (Real-time)
         </CardTitle>
         <CardDescription>This week's earnings vs goals ({workDays.length} work days)</CardDescription>
       </CardHeader>
@@ -33,7 +33,7 @@ export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProp
               <span className="text-sm text-gray-600">Weekly Progress</span>
               <span className="font-medium">{progress.toFixed(0)}%</span>
             </div>
-            <Progress value={progress} className="h-3" />
+            <Progress value={Math.min(progress, 100)} className="h-3" />
             <div className="flex justify-between text-xs text-gray-500">
               <span>
                 {currency}
@@ -49,7 +49,7 @@ export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProp
           {/* Mini Daily Bars */}
           <div className="grid grid-cols-7 gap-1">
             {dailyIncome.map((day, index) => {
-              const dayProgress = day.goal > 0 ? (day.amount / day.goal) * 100 : 0
+              const dayProgress = (day.goal || 0) > 0 ? ((day.amount || 0) / day.goal) * 100 : 0
               return (
                 <div key={index} className="text-center">
                   <div className="text-xs text-gray-600 mb-1">{day.day}</div>
@@ -66,7 +66,7 @@ export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProp
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
                         {currency}
-                        {day.amount.toLocaleString()}
+                        {(day.amount || 0).toLocaleString()}
                       </div>
                     </>
                   ) : (
