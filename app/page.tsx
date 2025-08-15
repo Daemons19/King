@@ -15,7 +15,6 @@ import {
   DollarSign,
   CreditCard,
   TrendingUp,
-  Trash2,
   Bell,
 } from "lucide-react"
 import { SpendingChart } from "../components/spending-chart"
@@ -84,7 +83,7 @@ const getCurrentWeekDays = () => {
 // Default data - focused on daily earnings in PHP with updated daily goal
 const defaultDashboardData = {
   totalBalance: 12450.75,
-  dailyIncomeGoal: 1100.0, // Updated from 800 to 1100
+  dailyIncomeGoal: 1100.0,
   weeklyExpenses: 3850.25,
   weeklyPayables: 1450.0,
   currency: "₱",
@@ -110,7 +109,7 @@ const defaultTransactions = [
   {
     id: 1,
     description: "Daily Work",
-    amount: 1100, // Updated from 720 to 1100
+    amount: 1100,
     type: "income",
     category: "Work",
     date: new Date().toISOString().split("T")[0],
@@ -130,12 +129,12 @@ const initializeDailyIncome = () => {
   const weekDays = getCurrentWeekDays()
   return weekDays.map((dayInfo) => ({
     day: dayInfo.day,
-    amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0, // Random past earnings for demo
-    goal: dayInfo.day === "Sun" ? 800 : 1100, // Updated: Sunday gets 800, others get 1100
+    amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0,
+    goal: dayInfo.day === "Sun" ? 800 : 1100,
     date: dayInfo.date,
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
-    isWorkDay: dayInfo.day !== "Sun", // Sunday is not a work day by default
+    isWorkDay: dayInfo.day !== "Sun",
   }))
 }
 
@@ -193,7 +192,7 @@ export default function BudgetingApp() {
 
     const timer = setInterval(() => {
       setCurrentTime(getManilaTime())
-    }, 60000) // Update every minute
+    }, 60000)
 
     return () => clearInterval(timer)
   }, [isClient])
@@ -219,7 +218,7 @@ export default function BudgetingApp() {
           return {
             day: dayInfo.day,
             amount: savedDay?.amount || 0,
-            goal: savedDay?.goal || (dayInfo.day === "Sat" || dayInfo.day === "Sun" ? 800 : 1100), // Updated goals
+            goal: savedDay?.goal || (dayInfo.day === "Sat" || dayInfo.day === "Sun" ? 800 : 1100),
             date: dayInfo.date,
             isToday: dayInfo.isToday,
             isPast: dayInfo.isPast,
@@ -259,7 +258,7 @@ export default function BudgetingApp() {
   // Today's data with null checks
   const todayData = Array.isArray(dailyIncome) ? dailyIncome.find((day) => day?.isToday) : null
   const todayIncome = todayData?.amount || 0
-  const todayGoal = todayData?.goal || dashboardData?.dailyIncomeGoal || 1100 // Updated default
+  const todayGoal = todayData?.goal || dashboardData?.dailyIncomeGoal || 1100
 
   // Real-time expense calculations from transactions with null checks
   const currentWeekExpenses = Array.isArray(transactions)
@@ -319,7 +318,7 @@ export default function BudgetingApp() {
       // Reset all state to empty/default values
       setDashboardData({
         totalBalance: 0,
-        dailyIncomeGoal: 1100.0, // Updated default
+        dailyIncomeGoal: 1100.0,
         weeklyExpenses: 0,
         weeklyPayables: 0,
         currency: "₱",
@@ -386,7 +385,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v35</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v36</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -523,68 +522,6 @@ export default function BudgetingApp() {
                 />
               </div>
 
-              {/* Real-time Savings Breakdown */}
-              <Card className="bg-white/80 backdrop-blur-sm border-0">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg text-gray-800">Real-time Savings Projection</CardTitle>
-                  <CardDescription>Based on work days only + remaining goals</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Already Earned (Work Days)</span>
-                      <span className="font-medium text-green-600">
-                        {currency}
-                        {safeToLocaleString(weeklyEarned)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">
-                        Potential Remaining ({remainingWorkDays.length} work days)
-                      </span>
-                      <span className="font-medium text-blue-600">
-                        {currency}
-                        {safeToLocaleString(potentialRemainingEarnings)}
-                      </span>
-                    </div>
-                    <div className="border-t pt-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Projected Total</span>
-                        <span className="font-medium text-gray-800">
-                          {currency}
-                          {safeToLocaleString(projectedWeeklyTotal)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Weekly Payables</span>
-                      <span className="font-medium text-red-600">
-                        -{currency}
-                        {safeToLocaleString(totalPendingPayables)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Weekly Expenses</span>
-                      <span className="font-medium text-red-600">
-                        -{currency}
-                        {safeToLocaleString(currentWeekExpenses)}
-                      </span>
-                    </div>
-                    <div className="border-t pt-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium text-gray-800">Projected Savings</span>
-                        <span
-                          className={`font-bold text-lg ${projectedWeeklySavings >= 0 ? "text-green-600" : "text-red-600"}`}
-                        >
-                          {currency}
-                          {safeToLocaleString(projectedWeeklySavings)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Daily Income Chart - Real-time */}
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
 
@@ -605,19 +542,6 @@ export default function BudgetingApp() {
             </TabsContent>
 
             <TabsContent value="income" className="space-y-4 mt-0">
-              {/* Clear Data Button */}
-              <div className="flex justify-end">
-                <Button
-                  onClick={clearDailyIncome}
-                  variant="outline"
-                  size="sm"
-                  className="bg-red-50 text-red-600 hover:bg-red-100"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Income Data
-                </Button>
-              </div>
-
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
 
               <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -684,19 +608,6 @@ export default function BudgetingApp() {
             </TabsContent>
 
             <TabsContent value="expenses" className="space-y-4 mt-0">
-              {/* Clear Data Button */}
-              <div className="flex justify-end">
-                <Button
-                  onClick={clearBudgetCategories}
-                  variant="outline"
-                  size="sm"
-                  className="bg-red-50 text-red-600 hover:bg-red-100"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Categories
-                </Button>
-              </div>
-
               <SpendingChart budgetCategories={updatedBudgetCategories} currency={currency} />
 
               <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -742,19 +653,6 @@ export default function BudgetingApp() {
             </TabsContent>
 
             <TabsContent value="payables" className="space-y-4 mt-0">
-              {/* Clear Data Button */}
-              <div className="flex justify-end">
-                <Button
-                  onClick={clearWeeklyPayables}
-                  variant="outline"
-                  size="sm"
-                  className="bg-red-50 text-red-600 hover:bg-red-100"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Payables
-                </Button>
-              </div>
-
               <WeeklyPayablesCard
                 weeklyPayables={weeklyPayables}
                 setWeeklyPayables={setWeeklyPayables}
@@ -763,19 +661,6 @@ export default function BudgetingApp() {
             </TabsContent>
 
             <TabsContent value="transactions" className="space-y-4 mt-0">
-              {/* Clear Data Button */}
-              <div className="flex justify-end">
-                <Button
-                  onClick={clearTransactions}
-                  variant="outline"
-                  size="sm"
-                  className="bg-red-50 text-red-600 hover:bg-red-100"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear Transactions
-                </Button>
-              </div>
-
               <TransactionList transactions={transactions} currency={currency} />
             </TabsContent>
           </Tabs>

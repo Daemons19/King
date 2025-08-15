@@ -1,51 +1,52 @@
 "use client"
 
 import type React from "react"
-import { GeistSans } from "geist/font/sans"
-import { GeistMono } from "geist/font/mono"
-import "./globals.css"
+
 import { useEffect } from "react"
 
-export default function ClientLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const checkAutoUpdate = async () => {
-      const autoUpdateEnabled = localStorage.getItem("autoUpdateEnabled")
-      if (autoUpdateEnabled === "false") return
+    // Register service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js", { scope: "/" })
+        .then((registration) => {
+          console.log("SW registered: ", registration)
 
-      if ("serviceWorker" in navigator) {
-        try {
-          const registration = await navigator.serviceWorker.getRegistration()
-          if (registration) {
-            // Check for updates silently
-            await registration.update()
-          }
-        } catch (error) {
-          console.log("Auto-update check failed:", error)
-        }
-      }
+          // Check for updates immediately
+          registration.update()
+
+          // Listen for updates
+          registration.addEventListener("updatefound", () => {
+            const newWorker = registration.installing
+            if (newWorker) {
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  // New version available
+                  console.log("New version available!")
+                }
+              })
+            }
+          })
+        })
+        .catch((registrationError) => {
+          console.log("SW registration failed: ", registrationError)
+        })
     }
 
-    // Check for updates 5 seconds after app loads
-    const timer = setTimeout(checkAutoUpdate, 5000)
-    return () => clearTimeout(timer)
+    // Handle PWA install prompt
+    let deferredPrompt: any
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault()
+      deferredPrompt = e
+    })
+
+    // Handle app installed
+    window.addEventListener("appinstalled", () => {
+      console.log("PWA was installed")
+      deferredPrompt = null
+    })
   }, [])
 
-  return (
-    <html lang="en">
-      <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
-      </head>
-      <body>{children}</body>
-    </html>
-  )
+  return <>{children}</>
 }

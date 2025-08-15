@@ -3,8 +3,10 @@
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TrendingUp, TrendingDown, Filter, Calendar } from "lucide-react"
+import { TrendingUp, TrendingDown, Search, Filter, Calendar } from "lucide-react"
 
 interface Transaction {
   id: number
@@ -21,122 +23,145 @@ interface TransactionListProps {
 }
 
 export function TransactionList({ transactions, currency }: TransactionListProps) {
-  const [filter, setFilter] = useState("all")
-  const [sortBy, setSortBy] = useState("date")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all")
+  const [filterCategory, setFilterCategory] = useState("all")
+
+  // Get unique categories
+  const categories = Array.from(new Set(transactions.map((t) => t.category)))
 
   // Filter transactions
   const filteredTransactions = transactions.filter((transaction) => {
-    if (filter === "all") return true
-    return transaction.type === filter
-  })
-
-  // Sort transactions
-  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
-    if (sortBy === "date") {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
-    } else if (sortBy === "amount") {
-      return Math.abs(b.amount) - Math.abs(a.amount)
-    }
-    return 0
+    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesType = filterType === "all" || transaction.type === filterType
+    const matchesCategory = filterCategory === "all" || transaction.category === filterCategory
+    return matchesSearch && matchesType && matchesCategory
   })
 
   // Calculate totals
-  const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
-
-  const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0)
-
-  const netAmount = totalIncome - totalExpenses
+  const totalIncome = filteredTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+  const totalExpenses = filteredTransactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
 
   return (
     <div className="space-y-4">
-      {/* Summary Card */}
-      <Card className="bg-white/80 backdrop-blur-sm border-0">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg text-gray-800">Transaction Summary</CardTitle>
-          <CardDescription>Your financial activity overview</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <div className="flex items-center justify-center mb-1">
-                <TrendingUp className="w-4 h-4 text-green-600 mr-1" />
-                <span className="text-sm text-gray-600">Income</span>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="bg-gradient-to-br from-green-500 to-emerald-600 text-white border-0">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-100 text-sm">Total Income</p>
+                <p className="text-2xl font-bold">
+                  {currency}
+                  {totalIncome.toLocaleString()}
+                </p>
               </div>
-              <div className="font-bold text-green-600">
-                {currency}
-                {totalIncome.toLocaleString()}
-              </div>
+              <TrendingUp className="w-8 h-8 text-green-200" />
             </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center mb-1">
-                <TrendingDown className="w-4 h-4 text-red-600 mr-1" />
-                <span className="text-sm text-gray-600">Expenses</span>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-red-500 to-pink-600 text-white border-0">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-red-100 text-sm">Total Expenses</p>
+                <p className="text-2xl font-bold">
+                  {currency}
+                  {totalExpenses.toLocaleString()}
+                </p>
               </div>
-              <div className="font-bold text-red-600">
-                {currency}
-                {totalExpenses.toLocaleString()}
-              </div>
+              <TrendingDown className="w-8 h-8 text-red-200" />
             </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center mb-1">
-                <Calendar className="w-4 h-4 text-blue-600 mr-1" />
-                <span className="text-sm text-gray-600">Net</span>
-              </div>
-              <div className={`font-bold ${netAmount >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {currency}
-                {netAmount.toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Filters */}
       <Card className="bg-white/80 backdrop-blur-sm border-0">
-        <CardContent className="p-4">
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <Select value={filter} onValueChange={setFilter}>
-                <SelectTrigger className="bg-white">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Transactions</SelectItem>
-                  <SelectItem value="income">Income Only</SelectItem>
-                  <SelectItem value="expense">Expenses Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="date">Sort by Date</SelectItem>
-                  <SelectItem value="amount">Sort by Amount</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+            <Filter className="w-5 h-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search transactions..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 bg-white"
+            />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
+              <SelectTrigger className="bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="income">Income Only</SelectItem>
+                <SelectItem value="expense">Expenses Only</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(searchTerm || filterType !== "all" || filterCategory !== "all") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchTerm("")
+                setFilterType("all")
+                setFilterCategory("all")
+              }}
+              className="w-full"
+            >
+              Clear Filters
+            </Button>
+          )}
         </CardContent>
       </Card>
 
       {/* Transaction List */}
       <Card className="bg-white/80 backdrop-blur-sm border-0">
         <CardHeader>
-          <CardTitle className="text-gray-800">Recent Transactions ({sortedTransactions.length})</CardTitle>
+          <CardTitle className="text-gray-800 flex items-center gap-2">
+            <Calendar className="w-5 h-5" />
+            Recent Transactions
+          </CardTitle>
+          <CardDescription>
+            Showing {filteredTransactions.length} of {transactions.length} transactions
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {sortedTransactions.length === 0 ? (
+          {filteredTransactions.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <p>No transactions found</p>
-              <p className="text-sm">Start by adding your first transaction</p>
+              <p className="text-sm">Try adjusting your filters or add some transactions</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {sortedTransactions.map((transaction) => (
+              {filteredTransactions.map((transaction) => (
                 <div
                   key={transaction.id}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
@@ -153,18 +178,18 @@ export function TransactionList({ transactions, currency }: TransactionListProps
                         <TrendingDown className="w-5 h-5" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-800">{transaction.description}</div>
+                    <div>
+                      <p className="font-medium text-gray-800">{transaction.description}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="outline" className="text-xs">
                           {transaction.category}
                         </Badge>
-                        <span className="text-xs text-gray-500">{new Date(transaction.date).toLocaleDateString()}</span>
+                        <span className="text-xs text-gray-500">{transaction.date}</span>
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div
+                    <p
                       className={`font-bold text-lg ${
                         transaction.type === "income" ? "text-green-600" : "text-red-600"
                       }`}
@@ -172,7 +197,7 @@ export function TransactionList({ transactions, currency }: TransactionListProps
                       {transaction.type === "income" ? "+" : "-"}
                       {currency}
                       {Math.abs(transaction.amount).toLocaleString()}
-                    </div>
+                    </p>
                   </div>
                 </div>
               ))}

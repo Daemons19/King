@@ -1,12 +1,15 @@
 {
-  "name": "Daily Budget Tracker v35",
-  "short_name": "Budget v35",
-  "description": "Track your daily income, expenses, and weekly payables with enhanced PWA updates",
+  "name": "Daily Budget Tracker v36",
+  "short_name": "Budget v36",
+  "description": "Track your daily income, expenses, and bills with real-time updates",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#8B5CF6",
-  "theme_color": "#8B5CF6",
-  "orientation": "portrait",
+  "background_color": "#6366f1",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["finance", "productivity", "utilities"],
   "icons": [
     {
       "src": "/placeholder-logo.png",
@@ -21,11 +24,14 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance", "productivity", "utilities"],
-  "lang": "en",
-  "dir": "ltr",
-  "scope": "/",
-  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/placeholder.jpg",
+      "sizes": "540x720",
+      "type": "image/jpeg",
+      "form_factor": "narrow"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Add Income",
@@ -42,20 +48,8 @@
     {
       "name": "Pay Bills",
       "short_name": "Bills",
-      "description": "View and pay weekly bills",
-      "url": "/?tab=payables",
-      "icons": [
-        {
-          "src": "/placeholder-logo.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Check Updates",
-      "short_name": "Updates",
-      "description": "Check for app updates",
-      "url": "/?tab=settings&section=updates",
+      "description": "View and pay pending bills",
+      "url": "/?action=pay-bills",
       "icons": [
         {
           "src": "/placeholder-logo.png",
@@ -63,5 +57,13 @@
         }
       ]
     }
-  ]
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }

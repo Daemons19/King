@@ -1,5 +1,5 @@
-const CACHE_NAME = "budget-tracker-v35"
-const APP_VERSION = "v35"
+const CACHE_NAME = "budget-tracker-v36"
+const APP_VERSION = "v36"
 const urlsToCache = ["/", "/offline.html", "/manifest.json", "/placeholder-logo.png", "/favicon.ico"]
 
 // Install event - cache resources and notify about updates

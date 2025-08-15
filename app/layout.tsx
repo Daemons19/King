@@ -1,60 +1,52 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { GeistSans } from "geist/font/sans"
-import { GeistMono } from "geist/font/mono"
+import { Inter } from "next/font/google"
 import "./globals.css"
+import ClientLayout from "./ClientLayout"
+
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Daily Budget Tracker v34",
-  description: "Track your daily income, expenses, and weekly payables with real-time calculations",
+  title: "Daily Budget Tracker v36",
+  description: "Track your daily income, expenses, and bills with real-time updates",
   manifest: "/manifest.json",
+  themeColor: "#6366f1",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Budget v36",
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: "/placeholder-logo.png",
     apple: "/placeholder-logo.png",
   },
-  themeColor: "#8B5CF6",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
     generator: 'v0.app'
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en">
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              // Auto-update check on app load
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', async () => {
-                  try {
-                    const autoUpdateEnabled = localStorage.getItem('autoUpdateEnabled');
-                    if (autoUpdateEnabled === 'false') return;
-                    
-                    const registration = await navigator.serviceWorker.register('/sw.js');
-                    
-                    // Check for updates silently after 5 seconds
-                    setTimeout(async () => {
-                      try {
-                        await registration.update();
-                      } catch (error) {
-                        console.log('Auto-update check failed:', error);
-                      }
-                    }, 5000);
-                  } catch (error) {
-                    console.log('Service worker registration failed:', error);
-                  }
-                });
-              }
-            `,
-          }}
-        />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#6366f1" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Budget v36" />
+        <link rel="apple-touch-icon" href="/placeholder-logo.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="Budget v36" />
       </head>
-      <body className={GeistSans.className}>{children}</body>
+      <body className={inter.className}>
+        <ClientLayout>{children}</ClientLayout>
+      </body>
     </html>
   )
 }
