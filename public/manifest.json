@@ -1,7 +1,7 @@
 {
-  "name": "Daily Budget Tracker v34",
-  "short_name": "Budget v34",
-  "description": "Track your daily income, expenses, and weekly payables with real-time calculations",
+  "name": "Daily Budget Tracker v35",
+  "short_name": "Budget v35",
+  "description": "Track your daily income, expenses, and weekly payables with enhanced PWA updates",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#8B5CF6",
@@ -25,5 +25,43 @@
   "lang": "en",
   "dir": "ltr",
   "scope": "/",
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Add Income",
+      "short_name": "Income",
+      "description": "Quickly add daily income",
+      "url": "/?action=add-income",
+      "icons": [
+        {
+          "src": "/placeholder-logo.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Pay Bills",
+      "short_name": "Bills",
+      "description": "View and pay weekly bills",
+      "url": "/?tab=payables",
+      "icons": [
+        {
+          "src": "/placeholder-logo.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Check Updates",
+      "short_name": "Updates",
+      "description": "Check for app updates",
+      "url": "/?tab=settings&section=updates",
+      "icons": [
+        {
+          "src": "/placeholder-logo.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
 }

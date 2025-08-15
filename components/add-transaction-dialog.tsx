@@ -1,21 +1,27 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { PlusCircle, Minus, Plus } from "lucide-react"
+import { Plus, DollarSign, TrendingDown } from "lucide-react"
+
+interface Transaction {
+  description: string
+  amount: number
+  type: "income" | "expense"
+  category: string
+  date: string
+}
 
 interface AddTransactionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAddTransaction: (transaction: any) => void
-  budgetCategories: any[]
+  onAddTransaction: (transaction: Transaction) => void
+  budgetCategories: Array<{ name: string; budgeted: number; spent: number; color: string; id: number }>
   currency: string
 }
 
@@ -26,131 +32,195 @@ export function AddTransactionDialog({
   budgetCategories,
   currency,
 }: AddTransactionDialogProps) {
-  const [transaction, setTransaction] = useState({
-    type: "expense",
+  const [activeTab, setActiveTab] = useState("income")
+  const [formData, setFormData] = useState({
+    description: "",
     amount: "",
     category: "",
-    description: "",
     date: new Date().toISOString().split("T")[0],
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!transaction.amount || !transaction.category) return
+  const handleSubmit = (type: "income" | "expense") => {
+    if (!formData.description || !formData.amount) return
 
-    const newTransaction = {
-      id: Date.now(),
-      type: transaction.type,
-      amount: Number.parseFloat(transaction.amount),
-      category: transaction.category,
-      description: transaction.description,
-      date: transaction.date,
-      timestamp: new Date().toISOString(),
+    const transaction: Transaction = {
+      description: formData.description,
+      amount: Number.parseFloat(formData.amount),
+      type,
+      category: formData.category || (type === "income" ? "Work" : "Other"),
+      date: formData.date,
     }
 
-    onAddTransaction(newTransaction)
-    setTransaction({
-      type: "expense",
+    onAddTransaction(transaction)
+    setFormData({
+      description: "",
       amount: "",
       category: "",
-      description: "",
       date: new Date().toISOString().split("T")[0],
     })
     onOpenChange(false)
   }
 
+  const incomeCategories = ["Work", "Freelance", "Business", "Investment", "Gift", "Other"]
+  const expenseCategories =
+    budgetCategories.length > 0
+      ? budgetCategories.map((cat) => cat.name)
+      : ["Food", "Transport", "Entertainment", "Shopping", "Bills", "Other"]
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md mx-4">
+      <DialogContent className="max-w-md mx-4 bg-gradient-to-br from-white to-purple-50">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <PlusCircle className="w-5 h-5" />
+          <DialogTitle className="text-xl bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
             Add Transaction
           </DialogTitle>
+          <DialogDescription>Record your income or expenses</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={transaction.type === "expense" ? "default" : "outline"}
-              onClick={() => setTransaction({ ...transaction, type: "expense" })}
-              className="flex-1"
-            >
-              <Minus className="w-4 h-4 mr-2" />
-              Expense
-            </Button>
-            <Button
-              type="button"
-              variant={transaction.type === "income" ? "default" : "outline"}
-              onClick={() => setTransaction({ ...transaction, type: "income" })}
-              className="flex-1"
-            >
-              <Plus className="w-4 h-4 mr-2" />
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-purple-100 p-1 rounded-lg">
+            <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md">
+              <DollarSign className="w-4 h-4 mr-2" />
               Income
-            </Button>
-          </div>
+            </TabsTrigger>
+            <TabsTrigger value="expense" className="data-[state=active]:bg-white rounded-md">
+              <TrendingDown className="w-4 h-4 mr-2" />
+              Expense
+            </TabsTrigger>
+          </TabsList>
 
-          <div className="space-y-2">
-            <Label htmlFor="amount">Amount ({currency})</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              value={transaction.amount}
-              onChange={(e) => setTransaction({ ...transaction, amount: e.target.value })}
-              placeholder="0.00"
-              required
-            />
-          </div>
+          <TabsContent value="income" className="space-y-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="income-description">Description</Label>
+                <Input
+                  id="income-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Daily work earnings"
+                  className="bg-white"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
-            <Select
-              value={transaction.category}
-              onValueChange={(value) => setTransaction({ ...transaction, category: value })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {budgetCategories.map((category) => (
-                  <SelectItem key={category.id} value={category.name}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="income-amount">Amount ({currency})</Label>
+                <Input
+                  id="income-amount"
+                  type="number"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  placeholder="1100"
+                  className="bg-white"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description (Optional)</Label>
-            <Textarea
-              id="description"
-              value={transaction.description}
-              onChange={(e) => setTransaction({ ...transaction, description: e.target.value })}
-              placeholder="Add a note..."
-              rows={2}
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="income-category">Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {incomeCategories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="date">Date</Label>
-            <Input
-              id="date"
-              type="date"
-              value={transaction.date}
-              onChange={(e) => setTransaction({ ...transaction, date: e.target.value })}
-              required
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="income-date">Date</Label>
+                <Input
+                  id="income-date"
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="bg-white"
+                />
+              </div>
 
-          <Button type="submit" className="w-full">
-            Add Transaction
-          </Button>
-        </form>
+              <Button
+                onClick={() => handleSubmit("income")}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-600"
+                disabled={!formData.description || !formData.amount}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Income
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="expense" className="space-y-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="expense-description">Description</Label>
+                <Input
+                  id="expense-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Lunch, transport, etc."
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expense-amount">Amount ({currency})</Label>
+                <Input
+                  id="expense-amount"
+                  type="number"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  placeholder="50"
+                  className="bg-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expense-category">Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {expenseCategories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expense-date">Date</Label>
+                <Input
+                  id="expense-date"
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="bg-white"
+                />
+              </div>
+
+              <Button
+                onClick={() => handleSubmit("expense")}
+                className="w-full bg-gradient-to-r from-red-500 to-pink-600"
+                disabled={!formData.description || !formData.amount}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Expense
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

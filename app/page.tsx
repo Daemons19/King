@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -24,10 +24,10 @@ import { SettingsDialog } from "../components/settings-dialog"
 import { DailyIncomeChart } from "../components/daily-income-chart"
 import { WeeklyPayablesCard } from "../components/weekly-payables-card"
 import { InstallPrompt } from "../components/install-prompt"
-import { QuickAddDialog } from "../components/quick-add-dialog"
-import { OptimizedCard } from "../components/optimized-card"
-import { NotificationManager } from "../components/notification-manager"
-import { OfflineIndicator } from "../components/offline-indicator"
+import { AddTransactionDialog } from "@/components/add-transaction-dialog"
+import OfflineIndicator from "@/components/offline-indicator"
+import OptimizedCard from "@/components/optimized-card"
+import NotificationManager from "@/components/notification-manager"
 
 // Helper function to get current Manila time
 const getManilaTime = () => {
@@ -81,10 +81,10 @@ const getCurrentWeekDays = () => {
   return weekDays
 }
 
-// Default data - focused on daily earnings in PHP
+// Default data - focused on daily earnings in PHP with updated daily goal
 const defaultDashboardData = {
   totalBalance: 12450.75,
-  dailyIncomeGoal: 800.0,
+  dailyIncomeGoal: 1100.0, // Updated from 800 to 1100
   weeklyExpenses: 3850.25,
   weeklyPayables: 1450.0,
   currency: "₱",
@@ -110,7 +110,7 @@ const defaultTransactions = [
   {
     id: 1,
     description: "Daily Work",
-    amount: 720,
+    amount: 1100, // Updated from 720 to 1100
     type: "income",
     category: "Work",
     date: new Date().toISOString().split("T")[0],
@@ -125,13 +125,13 @@ const defaultTransactions = [
   },
 ]
 
-// Initialize daily income with current week dates
+// Initialize daily income with current week dates and updated goals
 const initializeDailyIncome = () => {
   const weekDays = getCurrentWeekDays()
   return weekDays.map((dayInfo) => ({
     day: dayInfo.day,
-    amount: dayInfo.isPast ? Math.random() * 400 + 600 : 0, // Random past earnings for demo
-    goal: dayInfo.day === "Sun" ? 600 : 800, // Only Sunday gets reduced goal
+    amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0, // Random past earnings for demo
+    goal: dayInfo.day === "Sun" ? 800 : 1100, // Updated: Sunday gets 800, others get 1100
     date: dayInfo.date,
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
@@ -157,6 +157,12 @@ const safeLocalStorage = {
       localStorage.removeItem(key)
     }
   },
+}
+
+// Safe number formatting function
+const safeToLocaleString = (value: any): string => {
+  const num = Number(value)
+  return isNaN(num) ? "0" : num.toLocaleString()
 }
 
 export default function BudgetingApp() {
@@ -213,7 +219,7 @@ export default function BudgetingApp() {
           return {
             day: dayInfo.day,
             amount: savedDay?.amount || 0,
-            goal: savedDay?.goal || (dayInfo.day === "Sat" || dayInfo.day === "Sun" ? 600 : 800),
+            goal: savedDay?.goal || (dayInfo.day === "Sat" || dayInfo.day === "Sun" ? 800 : 1100), // Updated goals
             date: dayInfo.date,
             isToday: dayInfo.isToday,
             isPast: dayInfo.isPast,
@@ -241,53 +247,62 @@ export default function BudgetingApp() {
     safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
   }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
 
-  // Real-time calculations - recalculated on every render
-  const currency = dashboardData.currency || "₱"
+  // Real-time calculations with safe defaults
+  const currency = dashboardData?.currency || "₱"
 
-  // Work days calculations
-  const workDays = dailyIncome.filter((day) => day.isWorkDay)
-  const weeklyEarned = workDays.reduce((sum, day) => sum + day.amount, 0)
-  const weeklyGoal = workDays.reduce((sum, day) => sum + day.goal, 0)
+  // Work days calculations with null checks
+  const workDays = Array.isArray(dailyIncome) ? dailyIncome.filter((day) => day?.isWorkDay) : []
+  const weeklyEarned = workDays.reduce((sum, day) => sum + (day?.amount || 0), 0)
+  const weeklyGoal = workDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
   const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
 
-  // Today's data
-  const todayData = dailyIncome.find((day) => day.isToday) || dailyIncome[0]
+  // Today's data with null checks
+  const todayData = Array.isArray(dailyIncome) ? dailyIncome.find((day) => day?.isToday) : null
   const todayIncome = todayData?.amount || 0
-  const todayGoal = todayData?.goal || dashboardData.dailyIncomeGoal
+  const todayGoal = todayData?.goal || dashboardData?.dailyIncomeGoal || 1100 // Updated default
 
-  // Real-time expense calculations from transactions
-  const currentWeekExpenses = transactions
-    .filter((t) => t.type === "expense" && new Date(t.date) >= new Date(getWeekStartManila()))
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+  // Real-time expense calculations from transactions with null checks
+  const currentWeekExpenses = Array.isArray(transactions)
+    ? transactions
+        .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
+        .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+    : 0
 
-  // Update budget categories spent amounts from transactions
-  const updatedBudgetCategories = budgetCategories.map((category) => {
-    const categoryExpenses = transactions
-      .filter((t) => t.type === "expense" && t.category === category.name)
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0)
-    return { ...category, spent: categoryExpenses }
-  })
+  // Update budget categories spent amounts from transactions with null checks
+  const updatedBudgetCategories = Array.isArray(budgetCategories)
+    ? budgetCategories.map((category) => {
+        const categoryExpenses = Array.isArray(transactions)
+          ? transactions
+              .filter((t) => t?.type === "expense" && t?.category === category?.name)
+              .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+          : 0
+        return { ...category, spent: categoryExpenses }
+      })
+    : []
 
-  // Real-time payables calculations
-  const totalWeeklyPayables = weeklyPayables.reduce((sum, payable) => sum + payable.amount, 0)
-  const pendingPayables = weeklyPayables.filter((p) => p.status === "pending")
-  const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + payable.amount, 0)
+  // Real-time payables calculations with null checks
+  const totalWeeklyPayables = Array.isArray(weeklyPayables)
+    ? weeklyPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
+    : 0
+  const pendingPayables = Array.isArray(weeklyPayables) ? weeklyPayables.filter((p) => p?.status === "pending") : []
+  const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
 
   // Calculate remaining work days and their potential earnings
-  const remainingWorkDays = workDays.filter((day) => !day.isPast && !day.isToday)
-  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + day.goal, 0)
+  const remainingWorkDays = workDays.filter((day) => !day?.isPast && !day?.isToday)
+  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
 
   // Projected total if goals are met for remaining work days
   const projectedWeeklyTotal = weeklyEarned + potentialRemainingEarnings
   const projectedWeeklySavings = projectedWeeklyTotal - totalWeeklyPayables - currentWeekExpenses
 
   // Current actual savings (what you have now)
-  const actualWeeklySavings = weeklyEarned - totalWeeklyPayables - currentWeekExpenses
-
-  // Real-time balance calculation
-  const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
-  const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Math.abs(t.amount), 0)
-  const calculatedBalance = dashboardData.totalBalance + totalIncome - totalExpenses
+  const totalIncome = Array.isArray(transactions)
+    ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
+    : 0
+  const totalExpenses = Array.isArray(transactions)
+    ? transactions.filter((t) => t?.type === "expense").reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+    : 0
+  const calculatedBalance = (dashboardData?.totalBalance || 0) + totalIncome - totalExpenses
 
   // Clear all data function
   const clearAllData = () => {
@@ -304,7 +319,7 @@ export default function BudgetingApp() {
       // Reset all state to empty/default values
       setDashboardData({
         totalBalance: 0,
-        dailyIncomeGoal: 800.0,
+        dailyIncomeGoal: 1100.0, // Updated default
         weeklyExpenses: 0,
         weeklyPayables: 0,
         currency: "₱",
@@ -371,7 +386,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v34</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v35</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -404,18 +419,18 @@ export default function BudgetingApp() {
               </span>
               <span className="text-xs text-purple-200">
                 Goal: {currency}
-                {todayGoal.toLocaleString()}
+                {safeToLocaleString(todayGoal)}
               </span>
             </div>
             <div className="text-3xl font-bold mb-2">
               {currency}
-              {todayIncome.toLocaleString()}
+              {safeToLocaleString(todayIncome)}
             </div>
             <Progress value={(todayIncome / todayGoal) * 100} className="h-2 bg-white/20" />
             <div className="flex justify-between text-xs text-purple-200 mt-1">
               <span>
                 {currency}
-                {todayIncome.toLocaleString()} earned
+                {safeToLocaleString(todayIncome)} earned
               </span>
               <span>{((todayIncome / todayGoal) * 100).toFixed(0)}%</span>
             </div>
@@ -425,19 +440,36 @@ export default function BudgetingApp() {
         {/* Main Content with bottom padding for navigation */}
         <div className="p-4 pb-28">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+            <TabsList className="grid w-full grid-cols-5 bg-white/90 p-1 rounded-lg shadow-lg">
+              <TabsTrigger value="home" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
+                Home
+              </TabsTrigger>
+              <TabsTrigger value="income" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
+                Income
+              </TabsTrigger>
+              <TabsTrigger value="expenses" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
+                Expenses
+              </TabsTrigger>
+              <TabsTrigger value="payables" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
+                Bills
+              </TabsTrigger>
+              <TabsTrigger value="transactions" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
+                History
+              </TabsTrigger>
+            </TabsList>
             <TabsContent value="home" className="space-y-4 mt-0">
               {/* Quick Stats - Real-time */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="Balance"
-                  value={`${currency}${calculatedBalance.toLocaleString()}`}
+                  value={`${currency}${safeToLocaleString(calculatedBalance)}`}
                   icon={Wallet}
                   gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
                   iconColor="text-emerald-200"
                 />
                 <OptimizedCard
                   title="Work Days"
-                  value={`${currency}${weeklyEarned.toLocaleString()}`}
+                  value={`${currency}${safeToLocaleString(weeklyEarned)}`}
                   icon={Target}
                   gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
                   iconColor="text-blue-200"
@@ -460,11 +492,11 @@ export default function BudgetingApp() {
                     <div className="flex justify-between text-xs text-gray-600">
                       <span>
                         {currency}
-                        {weeklyEarned.toLocaleString()} earned
+                        {safeToLocaleString(weeklyEarned)} earned
                       </span>
                       <span>
                         {currency}
-                        {weeklyGoal.toLocaleString()} goal
+                        {safeToLocaleString(weeklyGoal)} goal
                       </span>
                     </div>
                   </div>
@@ -475,7 +507,7 @@ export default function BudgetingApp() {
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="If Goals Met"
-                  value={`${currency}${projectedWeeklySavings.toLocaleString()}`}
+                  value={`${currency}${safeToLocaleString(projectedWeeklySavings)}`}
                   subtitle="Projected Savings"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-green-500 to-emerald-600"
@@ -483,7 +515,7 @@ export default function BudgetingApp() {
                 />
                 <OptimizedCard
                   title="Current"
-                  value={`${currency}${actualWeeklySavings.toLocaleString()}`}
+                  value={`${currency}${safeToLocaleString(calculatedBalance)}`}
                   subtitle="Actual Savings"
                   icon={TrendingDown}
                   gradient="bg-gradient-to-br from-orange-500 to-red-600"
@@ -503,7 +535,7 @@ export default function BudgetingApp() {
                       <span className="text-sm text-gray-600">Already Earned (Work Days)</span>
                       <span className="font-medium text-green-600">
                         {currency}
-                        {weeklyEarned.toLocaleString()}
+                        {safeToLocaleString(weeklyEarned)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -512,7 +544,7 @@ export default function BudgetingApp() {
                       </span>
                       <span className="font-medium text-blue-600">
                         {currency}
-                        {potentialRemainingEarnings.toLocaleString()}
+                        {safeToLocaleString(potentialRemainingEarnings)}
                       </span>
                     </div>
                     <div className="border-t pt-2">
@@ -520,7 +552,7 @@ export default function BudgetingApp() {
                         <span className="text-sm text-gray-600">Projected Total</span>
                         <span className="font-medium text-gray-800">
                           {currency}
-                          {projectedWeeklyTotal.toLocaleString()}
+                          {safeToLocaleString(projectedWeeklyTotal)}
                         </span>
                       </div>
                     </div>
@@ -528,14 +560,14 @@ export default function BudgetingApp() {
                       <span className="text-sm text-gray-600">Weekly Payables</span>
                       <span className="font-medium text-red-600">
                         -{currency}
-                        {totalPendingPayables.toLocaleString()}
+                        {safeToLocaleString(totalPendingPayables)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Weekly Expenses</span>
                       <span className="font-medium text-red-600">
                         -{currency}
-                        {currentWeekExpenses.toLocaleString()}
+                        {safeToLocaleString(currentWeekExpenses)}
                       </span>
                     </div>
                     <div className="border-t pt-2">
@@ -545,7 +577,7 @@ export default function BudgetingApp() {
                           className={`font-bold text-lg ${projectedWeeklySavings >= 0 ? "text-green-600" : "text-red-600"}`}
                         >
                           {currency}
-                          {projectedWeeklySavings.toLocaleString()}
+                          {safeToLocaleString(projectedWeeklySavings)}
                         </span>
                       </div>
                     </div>
@@ -595,54 +627,57 @@ export default function BudgetingApp() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {dailyIncome.map((day, index) => (
-                      <div
-                        key={index}
-                        className={`flex justify-between items-center p-3 rounded-lg ${
-                          day.isToday
-                            ? "bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300"
-                            : day.isPast
-                              ? "bg-gradient-to-r from-gray-50 to-blue-50"
-                              : "bg-gradient-to-r from-yellow-50 to-orange-50"
-                        } ${!day.isWorkDay ? "opacity-60" : ""}`}
-                      >
-                        <div>
-                          <p className="font-medium text-gray-800 flex items-center gap-2">
-                            {day.day} {day.isToday && "(Today)"}
-                            {!day.isWorkDay && (
-                              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Rest Day</span>
+                    {Array.isArray(dailyIncome) &&
+                      dailyIncome.map((day, index) => (
+                        <div
+                          key={index}
+                          className={`flex justify-between items-center p-3 rounded-lg ${
+                            day?.isToday
+                              ? "bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300"
+                              : day?.isPast
+                                ? "bg-gradient-to-r from-gray-50 to-blue-50"
+                                : "bg-gradient-to-r from-yellow-50 to-orange-50"
+                          } ${!day?.isWorkDay ? "opacity-60" : ""}`}
+                        >
+                          <div>
+                            <p className="font-medium text-gray-800 flex items-center gap-2">
+                              {day?.day} {day?.isToday && "(Today)"}
+                              {!day?.isWorkDay && (
+                                <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Rest Day</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              Goal: {currency}
+                              {safeToLocaleString(day?.goal)}
+                            </p>
+                            <p className="text-xs text-gray-500">{day?.date}</p>
+                          </div>
+                          <div className="text-right">
+                            <p
+                              className={`font-bold text-lg ${
+                                !day?.isWorkDay
+                                  ? "text-gray-400"
+                                  : (day?.amount || 0) >= (day?.goal || 0)
+                                    ? "text-green-600"
+                                    : day?.isPast
+                                      ? "text-red-600"
+                                      : "text-orange-600"
+                              }`}
+                            >
+                              {currency}
+                              {safeToLocaleString(day?.amount)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {day?.isWorkDay
+                                ? `${(((day?.amount || 0) / (day?.goal || 1)) * 100).toFixed(0)}%`
+                                : "N/A"}
+                            </p>
+                            {day?.isPast && (day?.amount || 0) === 0 && day?.isWorkDay && (
+                              <p className="text-xs text-red-500">No earnings</p>
                             )}
-                          </p>
-                          <p className="text-xs text-gray-600">
-                            Goal: {currency}
-                            {day.goal.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-gray-500">{day.date}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p
-                            className={`font-bold text-lg ${
-                              !day.isWorkDay
-                                ? "text-gray-400"
-                                : day.amount >= day.goal
-                                  ? "text-green-600"
-                                  : day.isPast
-                                    ? "text-red-600"
-                                    : "text-orange-600"
-                            }`}
-                          >
-                            {currency}
-                            {day.amount.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {day.isWorkDay ? `${((day.amount / day.goal) * 100).toFixed(0)}%` : "N/A"}
-                          </p>
-                          {day.isPast && day.amount === 0 && day.isWorkDay && (
-                            <p className="text-xs text-red-500">No earnings</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </CardContent>
               </Card>
@@ -677,24 +712,24 @@ export default function BudgetingApp() {
                   ) : (
                     <div className="space-y-4">
                       {updatedBudgetCategories.map((category, index) => {
-                        const percentage = (category.spent / category.budgeted) * 100
-                        const isOverBudget = category.spent > category.budgeted
+                        const percentage = ((category?.spent || 0) / (category?.budgeted || 1)) * 100
+                        const isOverBudget = (category?.spent || 0) > (category?.budgeted || 0)
 
                         return (
                           <div key={index} className="space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="font-medium text-gray-800">{category.name}</span>
+                              <span className="font-medium text-gray-800">{category?.name}</span>
                               <span className={`font-bold ${isOverBudget ? "text-red-600" : "text-gray-800"}`}>
                                 {currency}
-                                {category.spent.toLocaleString()}/{currency}
-                                {category.budgeted.toLocaleString()}
+                                {safeToLocaleString(category?.spent)}/{currency}
+                                {safeToLocaleString(category?.budgeted)}
                               </span>
                             </div>
                             <Progress value={Math.min(percentage, 100)} className="h-2" />
                             {isOverBudget && (
                               <p className="text-xs text-red-600">
                                 Over by {currency}
-                                {(category.spent - category.budgeted).toLocaleString()}
+                                {safeToLocaleString((category?.spent || 0) - (category?.budgeted || 0))}
                               </p>
                             )}
                           </div>
@@ -805,21 +840,11 @@ export default function BudgetingApp() {
         </div>
 
         {/* Dialogs */}
-        <QuickAddDialog
+        <AddTransactionDialog
           open={showAddTransaction}
-          onOpenChange={(open) => {
-            setShowAddTransaction(open)
-            if (!open) setQuickActionType(null)
-          }}
-          currency={currency}
-          weeklyPayables={weeklyPayables}
-          setWeeklyPayables={setWeeklyPayables}
-          initialTab={quickActionType}
-          onPayBill={(billName, amount) => {
-            // Handle bill payment logic if needed
-          }}
+          onOpenChange={setShowAddTransaction}
           onAddTransaction={(transaction) => {
-            setTransactions([transaction, ...transactions])
+            setTransactions([{ ...transaction, id: Date.now() }, ...transactions])
             // Update daily income if it's an income transaction for today
             if (transaction.type === "income") {
               const today = getCurrentDayManila()
@@ -834,6 +859,8 @@ export default function BudgetingApp() {
               }
             }
           }}
+          budgetCategories={budgetCategories}
+          currency={currency}
         />
 
         <SettingsDialog
