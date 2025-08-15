@@ -1,14 +1,38 @@
-const CACHE_NAME = "budget-tracker-v33"
+const CACHE_NAME = "budget-tracker-v34"
 const urlsToCache = ["/", "/manifest.json", "/placeholder-logo.png", "/offline.html"]
 
 // Install event - cache resources
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache)
-    }),
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => {
+        return cache.addAll(urlsToCache)
+      })
+      .then(() => {
+        // Show update notification
+        return self.registration.showNotification("App Update Available! 🚀", {
+          body: "A new version of Budget Tracker is ready. Tap to update!",
+          icon: "/placeholder-logo.png",
+          badge: "/placeholder-logo.png",
+          tag: "app-update",
+          requireInteraction: true,
+          actions: [
+            {
+              action: "update-now",
+              title: "Update Now",
+              icon: "/placeholder-logo.png",
+            },
+            {
+              action: "later",
+              title: "Later",
+              icon: "/placeholder-logo.png",
+            },
+          ],
+        })
+      }),
   )
-  self.skipWaiting()
+  // Don't skip waiting automatically - let user choose
 })
 
 // Activate event - clean up old caches
@@ -80,21 +104,43 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification("Budget Tracker", options))
 })
 
-// Notification click event
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close()
-
-  if (event.action === "explore") {
-    event.waitUntil(clients.openWindow("/"))
-  }
-})
-
-// Enhanced message handler for weekly payables notifications
+// Enhanced message handler for app updates and notifications
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting()
+  } else if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
     scheduleNotifications(event.data.payload)
   } else if (event.data && event.data.type === "SCHEDULE_WEEKLY_NOTIFICATIONS") {
     scheduleWeeklyPayableNotifications(event.data.payload)
+  }
+})
+
+// Enhanced notification click handler with update support
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+
+  if (event.notification.tag === "app-update") {
+    if (event.action === "update-now") {
+      // Skip waiting and activate new version
+      self.skipWaiting()
+      event.waitUntil(clients.openWindow("/"))
+    } else if (event.action === "later") {
+      // Just close the notification
+      return
+    } else {
+      // Default action - open app
+      event.waitUntil(clients.openWindow("/"))
+    }
+  } else if (event.action === "view-bills") {
+    event.waitUntil(clients.openWindow("/?tab=payables"))
+  } else if (event.action === "explore") {
+    event.waitUntil(clients.openWindow("/"))
+  } else if (event.action === "dismiss") {
+    // Just close the notification
+    return
+  } else {
+    // Default action - open app
+    event.waitUntil(clients.openWindow("/"))
   }
 })
 
@@ -175,23 +221,6 @@ function scheduleWeeklyPayableNotifications(data) {
     }
   })
 }
-
-// Enhanced notification click handler
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close()
-
-  if (event.action === "view-bills") {
-    event.waitUntil(clients.openWindow("/?tab=payables"))
-  } else if (event.action === "explore") {
-    event.waitUntil(clients.openWindow("/"))
-  } else if (event.action === "dismiss") {
-    // Just close the notification
-    return
-  } else {
-    // Default action - open app
-    event.waitUntil(clients.openWindow("/"))
-  }
-})
 
 async function syncData() {
   // Sync any pending data when connection is restored

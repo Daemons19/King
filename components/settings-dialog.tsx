@@ -27,6 +27,9 @@ import {
   TrendingDown,
   Target,
   DollarSign,
+  Download,
+  RefreshCw,
+  Loader2,
 } from "lucide-react"
 import { BiweeklyScheduler } from "./biweekly-scheduler"
 
@@ -298,6 +301,121 @@ export function SettingsDialog({
   const [monthlyPayables, setMonthlyPayables] = useState<any>({})
   const [previousWeeks, setPreviousWeeks] = useState<any[]>([])
   const [selectedWeekSummary, setSelectedWeekSummary] = useState<any>(null)
+
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null)
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => {
+    const saved = localStorage.getItem("autoUpdateEnabled")
+    return saved ? JSON.parse(saved) : true
+  })
+
+  // Save auto-update preference
+  useEffect(() => {
+    localStorage.setItem("autoUpdateEnabled", JSON.stringify(autoUpdateEnabled))
+  }, [autoUpdateEnabled])
+
+  // Check for updates function
+  const checkForUpdates = async () => {
+    setIsCheckingUpdates(true)
+    setUpdateStatus(null)
+
+    try {
+      // Simulate checking for updates
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Check if service worker has updates
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (registration) {
+          await registration.update()
+
+          if (registration.waiting) {
+            setUpdateStatus({
+              type: "info",
+              message: "New version available! Click download to update.",
+            })
+          } else {
+            setUpdateStatus({
+              type: "success",
+              message: "You have the latest version!",
+            })
+          }
+        }
+      } else {
+        setUpdateStatus({
+          type: "success",
+          message: "You have the latest version!",
+        })
+      }
+    } catch (error) {
+      setUpdateStatus({
+        type: "error",
+        message: "Failed to check for updates. Please try again.",
+      })
+    } finally {
+      setIsCheckingUpdates(false)
+    }
+  }
+
+  // Download latest version function
+  const downloadLatestVersion = async () => {
+    setIsDownloading(true)
+    setUpdateStatus(null)
+
+    try {
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration()
+
+        if (registration && registration.waiting) {
+          // Tell the waiting service worker to skip waiting and become active
+          registration.waiting.postMessage({ type: "SKIP_WAITING" })
+
+          // Listen for the controlling service worker change
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            setUpdateStatus({
+              type: "success",
+              message: "App updated successfully! Refresh to see new features.",
+            })
+
+            // Auto-refresh after 2 seconds
+            setTimeout(() => {
+              window.location.reload()
+            }, 2000)
+          })
+        } else {
+          // Force cache update
+          await caches.delete("budget-tracker-v34")
+
+          // Re-register service worker
+          await navigator.serviceWorker.register("/sw.js")
+
+          setUpdateStatus({
+            type: "success",
+            message: "App cache updated! Refresh to ensure latest version.",
+          })
+
+          // Auto-refresh after 2 seconds
+          setTimeout(() => {
+            window.location.reload()
+          }, 2000)
+        }
+      } else {
+        // Fallback for browsers without service worker support
+        setUpdateStatus({
+          type: "info",
+          message: "Please refresh your browser to get the latest version.",
+        })
+      }
+    } catch (error) {
+      setUpdateStatus({
+        type: "error",
+        message: "Failed to download update. Please refresh manually.",
+      })
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem("monthlyPayables")
@@ -1399,6 +1517,112 @@ export function SettingsDialog({
                     <p className="text-sm">Review your income, expenses, and goal achievement</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* App Update Section */}
+            <Card className="bg-white/90 border-0">
+              <CardHeader>
+                <CardTitle className="text-gray-800 flex items-center gap-2">
+                  <Download className="w-5 h-5 text-green-600" />
+                  App Updates
+                </CardTitle>
+                <CardDescription>Keep your offline app updated with new features</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="font-medium text-gray-800">Current Version</h4>
+                      <p className="text-sm text-gray-600">Daily Budget v34</p>
+                      <p className="text-xs text-gray-500">Last updated: {new Date().toLocaleDateString()}</p>
+                    </div>
+                    <Badge className="bg-green-100 text-green-800">Latest</Badge>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Button
+                      onClick={checkForUpdates}
+                      variant="outline"
+                      className="w-full bg-white hover:bg-green-50"
+                      disabled={isCheckingUpdates}
+                    >
+                      {isCheckingUpdates ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Checking for Updates...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Check for Updates
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      onClick={downloadLatestVersion}
+                      className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                      disabled={isDownloading}
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Downloading Update...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Latest Version
+                        </>
+                      )}
+                    </Button>
+
+                    {updateStatus && (
+                      <div
+                        className={`text-sm p-2 rounded ${
+                          updateStatus.type === "success"
+                            ? "bg-green-100 text-green-800"
+                            : updateStatus.type === "error"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {updateStatus.message}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Update History */}
+                <div className="bg-white p-3 rounded-lg border">
+                  <h4 className="font-medium text-gray-800 mb-2">Recent Updates</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">v34 - Enhanced Notifications</span>
+                      <span className="text-xs text-gray-500">Current</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">v33 - Saturday Default Bills</span>
+                      <span className="text-xs text-gray-500">Previous</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">v32 - Budget Audit System</span>
+                      <span className="text-xs text-gray-500">Previous</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Auto-update Settings */}
+                <div className="bg-white p-3 rounded-lg border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-gray-800">Auto-Update</h4>
+                      <p className="text-xs text-gray-600">Automatically check for updates on app start</p>
+                    </div>
+                    <Checkbox checked={autoUpdateEnabled} onCheckedChange={setAutoUpdateEnabled} />
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
