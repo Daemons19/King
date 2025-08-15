@@ -1,142 +1,101 @@
 "use client"
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-interface BudgetCategory {
-  id: number
-  name: string
-  budgeted: number
-  spent: number
-  color: string
-}
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { PieChart } from "lucide-react"
 
 interface SpendingChartProps {
-  budgetCategories: BudgetCategory[]
+  budgetCategories: any[]
   currency: string
 }
 
 export function SpendingChart({ budgetCategories, currency }: SpendingChartProps) {
-  // Transform data for the pie chart
-  const chartData = budgetCategories.map((category) => ({
-    name: category.name,
-    value: category.spent,
-    budgeted: category.budgeted,
-    percentage: category.budgeted > 0 ? (category.spent / category.budgeted) * 100 : 0,
-    color: category.color,
-  }))
-
-  // Generate colors for the pie chart
-  const COLORS = [
-    "#10b981", // emerald-500
-    "#3b82f6", // blue-500
-    "#8b5cf6", // purple-500
-    "#f59e0b", // amber-500
-    "#ef4444", // red-500
-    "#06b6d4", // cyan-500
-    "#84cc16", // lime-500
-    "#f97316", // orange-500
-  ]
-
-  const totalSpent = chartData.reduce((sum, item) => sum + item.value, 0)
-  const totalBudgeted = chartData.reduce((sum, item) => sum + item.budgeted, 0)
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload
-      return (
-        <div className="bg-white p-3 rounded-lg shadow-lg border">
-          <p className="font-medium">{data.name}</p>
-          <p className="text-sm text-gray-600">
-            Spent: {currency}
-            {data.value.toLocaleString()}
-          </p>
-          <p className="text-sm text-gray-600">
-            Budget: {currency}
-            {data.budgeted.toLocaleString()}
-          </p>
-          <p className="text-sm text-gray-600">{data.percentage.toFixed(1)}% of budget</p>
-        </div>
-      )
-    }
-    return null
-  }
-
-  if (budgetCategories.length === 0) {
-    return (
-      <Card className="bg-white/80 backdrop-blur-sm border-0">
-        <CardHeader>
-          <CardTitle className="text-gray-800">Spending Overview</CardTitle>
-          <CardDescription>Your spending breakdown by category</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-gray-500">
-            <p>No spending data yet.</p>
-            <p className="text-sm">Add budget categories in Settings to track your spending.</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
+  // Real-time calculations
+  const totalBudgeted = budgetCategories.reduce((sum, cat) => sum + (cat.budgeted || 0), 0)
+  const totalSpent = budgetCategories.reduce((sum, cat) => sum + (cat.spent || 0), 0)
+  const overallProgress = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
       <CardHeader>
-        <CardTitle className="text-gray-800">Spending Overview</CardTitle>
-        <CardDescription>
-          {currency}
-          {totalSpent.toLocaleString()} of {currency}
-          {totalBudgeted.toLocaleString()} budget used
-        </CardDescription>
+        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+          <PieChart className="w-5 h-5 text-purple-600" />
+          Budget Overview
+        </CardTitle>
+        <CardDescription>Your spending vs budget categories (Real-time)</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={40}
-                outerRadius={80}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                verticalAlign="bottom"
-                height={36}
-                formatter={(value, entry: any) => (
-                  <span style={{ color: entry.color }}>
-                    {value}: {currency}
-                    {entry.payload.value.toLocaleString()}
-                  </span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        <div className="space-y-4">
+          {/* Overall Progress */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Total Spent</span>
+              <span className="font-medium">{overallProgress.toFixed(0)}%</span>
+            </div>
+            <Progress value={Math.min(overallProgress, 100)} className="h-3" />
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>
+                {currency}
+                {totalSpent.toLocaleString()} spent
+              </span>
+              <span>
+                {currency}
+                {totalBudgeted.toLocaleString()} budgeted
+              </span>
+            </div>
+          </div>
 
-        {/* Summary Stats */}
-        <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-          <div className="text-center p-3 bg-green-50 rounded-lg">
-            <p className="text-green-600 font-medium">Total Spent</p>
-            <p className="text-lg font-bold text-green-700">
-              {currency}
-              {totalSpent.toLocaleString()}
-            </p>
+          {/* Category Breakdown */}
+          <div className="space-y-3">
+            {budgetCategories.map((category, index) => {
+              const percentage = (category.budgeted || 0) > 0 ? ((category.spent || 0) / category.budgeted) * 100 : 0
+              const isOverBudget = (category.spent || 0) > (category.budgeted || 0)
+
+              return (
+                <div key={category.id || index} className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3 h-3 rounded-full bg-gradient-to-r ${category.color || "from-gray-400 to-gray-500"}`}
+                      ></div>
+                      <span className="font-medium text-gray-800">{category.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm ${isOverBudget ? "text-red-600" : "text-gray-600"}`}>
+                        {currency}
+                        {(category.spent || 0).toLocaleString()} / {currency}
+                        {(category.budgeted || 0).toLocaleString()}
+                      </span>
+                      {isOverBudget && (
+                        <Badge variant="destructive" className="text-xs">
+                          Over
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Progress value={Math.min(percentage, 100)} className={`h-2 ${isOverBudget ? "bg-red-100" : ""}`} />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>{percentage.toFixed(0)}% used</span>
+                    {isOverBudget && (
+                      <span className="text-red-600">
+                        Over by {currency}
+                        {((category.spent || 0) - (category.budgeted || 0)).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
-            <p className="text-blue-600 font-medium">Remaining Budget</p>
-            <p className="text-lg font-bold text-blue-700">
-              {currency}
-              {Math.max(0, totalBudgeted - totalSpent).toLocaleString()}
-            </p>
-          </div>
+
+          {budgetCategories.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <PieChart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p>No budget categories yet</p>
+              <p className="text-sm">Add categories in Settings to track spending</p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

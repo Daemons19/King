@@ -12,10 +12,11 @@ export function OfflineIndicator() {
     // Set initial state
     setIsOnline(navigator.onLine)
 
+    // Handle online/offline events
     const handleOnline = () => {
       setIsOnline(true)
       setShowIndicator(true)
-      // Hide the "back online" indicator after 3 seconds
+      // Hide indicator after 3 seconds when back online
       setTimeout(() => setShowIndicator(false), 3000)
     }
 
@@ -27,33 +28,34 @@ export function OfflineIndicator() {
     window.addEventListener("online", handleOnline)
     window.addEventListener("offline", handleOffline)
 
+    // Show indicator initially if offline
+    if (!navigator.onLine) {
+      setShowIndicator(true)
+    }
+
     return () => {
       window.removeEventListener("online", handleOnline)
       window.removeEventListener("offline", handleOffline)
     }
   }, [])
 
-  // Only show indicator when offline or briefly when coming back online
-  if (!showIndicator && isOnline) {
-    return null
-  }
+  if (!showIndicator) return null
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
       <Badge
-        variant={isOnline ? "default" : "destructive"}
-        className={`flex items-center gap-2 px-3 py-2 ${
-          isOnline ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700 animate-pulse"
-        }`}
+        className={`${
+          isOnline ? "bg-green-100 text-green-800 border-green-200" : "bg-red-100 text-red-800 border-red-200"
+        } px-3 py-1 shadow-lg`}
       >
         {isOnline ? (
           <>
-            <Wifi className="w-4 h-4" />
+            <Wifi className="w-3 h-3 mr-1" />
             Back Online
           </>
         ) : (
           <>
-            <WifiOff className="w-4 h-4" />
+            <WifiOff className="w-3 h-3 mr-1" />
             Offline Mode
           </>
         )}

@@ -4,174 +4,212 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { CheckCircle, Clock, AlertCircle, Plus } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-interface WeeklyPayable {
-  id: number
-  name: string
-  amount: number
-  dueDay: string
-  status: "pending" | "paid" | "overdue"
-  week: string
-}
+import { CreditCard, Plus, Edit, Check, Clock, AlertCircle } from "lucide-react"
 
 interface WeeklyPayablesCardProps {
-  weeklyPayables: WeeklyPayable[]
-  setWeeklyPayables: (payables: WeeklyPayable[]) => void
+  weeklyPayables: any[]
+  setWeeklyPayables: (payables: any[]) => void
   currency: string
 }
 
 export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency }: WeeklyPayablesCardProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingPayable, setEditingPayable] = useState<any>(null)
   const [newPayable, setNewPayable] = useState({
     name: "",
     amount: "",
-    dueDay: "",
-    week: "This Week",
+    dueDay: "Monday",
+    frequency: "weekly",
   })
 
-  // Get current day to determine status
+  // Get current day for status determination
   const getCurrentDay = () => {
-    return new Date().toLocaleDateString("en-US", {
-      timeZone: "Asia/Manila",
-      weekday: "long",
-    })
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    return days[new Date().getDay()]
   }
 
-  const currentDay = getCurrentDay()
-  const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-  const currentDayIndex = dayOrder.indexOf(currentDay)
+  // Determine bill status based on due day
+  const getBillStatus = (bill: any) => {
+    if (bill.status === "paid") return "paid"
 
-  // Update payable status based on current day
-  const getPayableStatus = (payable: WeeklyPayable) => {
-    if (payable.status === "paid") return "paid"
+    const currentDay = getCurrentDay()
+    const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    const currentDayIndex = dayOrder.indexOf(currentDay)
+    const billDayIndex = dayOrder.indexOf(bill.dueDay)
 
-    const dueDayIndex = dayOrder.indexOf(payable.dueDay)
-    if (payable.week === "This Week") {
-      if (dueDayIndex < currentDayIndex) return "overdue"
-      if (dueDayIndex === currentDayIndex) return "pending" // Due today
-      return "pending"
-    }
-    return "pending"
-  }
-
-  // Calculate totals
-  const thisWeekPayables = weeklyPayables.filter((p) => p.week === "This Week")
-  const nextWeekPayables = weeklyPayables.filter((p) => p.week === "Next Week")
-
-  const totalThisWeek = thisWeekPayables.reduce((sum, p) => sum + p.amount, 0)
-  const paidThisWeek = thisWeekPayables.filter((p) => p.status === "paid").reduce((sum, p) => sum + p.amount, 0)
-  const pendingThisWeek = thisWeekPayables.filter((p) => p.status === "pending").reduce((sum, p) => sum + p.amount, 0)
-  const overdueThisWeek = thisWeekPayables
-    .filter((p) => getPayableStatus(p) === "overdue")
-    .reduce((sum, p) => sum + p.amount, 0)
-
-  const progressPercentage = totalThisWeek > 0 ? (paidThisWeek / totalThisWeek) * 100 : 0
-
-  const handleAddPayable = () => {
-    if (newPayable.name && newPayable.amount && newPayable.dueDay) {
-      const payable: WeeklyPayable = {
-        id: Date.now(),
-        name: newPayable.name,
-        amount: Number.parseFloat(newPayable.amount),
-        dueDay: newPayable.dueDay,
-        status: "pending",
-        week: newPayable.week,
-      }
-      setWeeklyPayables([...weeklyPayables, payable])
-      setNewPayable({ name: "", amount: "", dueDay: "", week: "This Week" })
-      setShowAddDialog(false)
+    if (billDayIndex < currentDayIndex) {
+      return "overdue"
+    } else if (billDayIndex === currentDayIndex) {
+      return "due-today"
+    } else {
+      return "upcoming"
     }
   }
 
-  const togglePayableStatus = (id: number) => {
-    setWeeklyPayables(
-      weeklyPayables.map((payable) =>
-        payable.id === id ? { ...payable, status: payable.status === "paid" ? "pending" : "paid" } : payable,
-      ),
-    )
-  }
+  // Get status badge
+  const getStatusBadge = (bill: any) => {
+    const status = getBillStatus(bill)
 
-  const deletePayable = (id: number) => {
-    setWeeklyPayables(weeklyPayables.filter((p) => p.id !== id))
-  }
-
-  const getStatusIcon = (payable: WeeklyPayable) => {
-    const status = getPayableStatus(payable)
     switch (status) {
       case "paid":
-        return <CheckCircle className="w-4 h-4 text-green-500" />
+        return (
+          <Badge className="bg-green-100 text-green-800">
+            <Check className="w-3 h-3 mr-1" />
+            Paid
+          </Badge>
+        )
       case "overdue":
-        return <AlertCircle className="w-4 h-4 text-red-500" />
+        return (
+          <Badge className="bg-red-100 text-red-800">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Overdue
+          </Badge>
+        )
+      case "due-today":
+        return (
+          <Badge className="bg-orange-100 text-orange-800">
+            <Clock className="w-3 h-3 mr-1" />
+            Due Today
+          </Badge>
+        )
+      case "upcoming":
+        return (
+          <Badge className="bg-blue-100 text-blue-800">
+            <Clock className="w-3 h-3 mr-1" />
+            Due This Week
+          </Badge>
+        )
       default:
-        return <Clock className="w-4 h-4 text-yellow-500" />
+        return <Badge variant="outline">Pending</Badge>
     }
   }
 
-  const getStatusBadge = (payable: WeeklyPayable) => {
-    const status = getPayableStatus(payable)
-    const colors = {
-      paid: "bg-green-100 text-green-800",
-      pending: "bg-yellow-100 text-yellow-800",
-      overdue: "bg-red-100 text-red-800",
+  // Get button color based on status
+  const getButtonColor = (bill: any) => {
+    const status = getBillStatus(bill)
+
+    switch (status) {
+      case "overdue":
+        return "bg-red-600 hover:bg-red-700"
+      case "due-today":
+        return "bg-orange-600 hover:bg-orange-700"
+      case "upcoming":
+        return "bg-green-600 hover:bg-green-700"
+      default:
+        return "bg-blue-600 hover:bg-blue-700"
     }
-    return (
-      <Badge className={colors[status]}>
-        {status === "overdue" ? "Overdue" : status === "paid" ? "Paid" : "Pending"}
-      </Badge>
-    )
   }
+
+  const handleAddPayable = () => {
+    if (!newPayable.name || !newPayable.amount) return
+
+    const payable = {
+      id: Date.now(),
+      name: newPayable.name,
+      amount: Number.parseFloat(newPayable.amount),
+      dueDay: newPayable.dueDay,
+      status: "pending",
+      week: "This Week",
+      frequency: newPayable.frequency,
+    }
+
+    setWeeklyPayables([...weeklyPayables, payable])
+    setNewPayable({ name: "", amount: "", dueDay: "Monday", frequency: "weekly" })
+    setShowAddDialog(false)
+  }
+
+  const handleEditPayable = (payable: any) => {
+    setEditingPayable(payable)
+    setNewPayable({
+      name: payable.name,
+      amount: payable.amount.toString(),
+      dueDay: payable.dueDay,
+      frequency: payable.frequency || "weekly",
+    })
+    setShowAddDialog(true)
+  }
+
+  const handleUpdatePayable = () => {
+    if (!newPayable.name || !newPayable.amount || !editingPayable) return
+
+    const updatedPayables = weeklyPayables.map((payable) =>
+      payable.id === editingPayable.id
+        ? {
+            ...payable,
+            name: newPayable.name,
+            amount: Number.parseFloat(newPayable.amount),
+            dueDay: newPayable.dueDay,
+            frequency: newPayable.frequency,
+          }
+        : payable,
+    )
+
+    setWeeklyPayables(updatedPayables)
+    setEditingPayable(null)
+    setNewPayable({ name: "", amount: "", dueDay: "Monday", frequency: "weekly" })
+    setShowAddDialog(false)
+  }
+
+  const handlePayBill = (billId: number) => {
+    const updatedPayables = weeklyPayables.map((payable) =>
+      payable.id === billId ? { ...payable, status: "paid" } : payable,
+    )
+    setWeeklyPayables(updatedPayables)
+  }
+
+  // Real-time calculations
+  const totalPending = weeklyPayables
+    .filter((payable) => payable.status === "pending")
+    .reduce((sum, payable) => sum + (payable.amount || 0), 0)
+
+  const dueTodayCount = weeklyPayables.filter((bill) => getBillStatus(bill) === "due-today").length
+  const overdueCount = weeklyPayables.filter((bill) => getBillStatus(bill) === "overdue").length
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
-            <CardTitle className="text-gray-800">Weekly Payables</CardTitle>
+            <CardTitle className="text-gray-800 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-blue-600" />
+              Weekly Payables (Real-time)
+            </CardTitle>
             <CardDescription>
-              {currency}
-              {paidThisWeek.toLocaleString()} of {currency}
-              {totalThisWeek.toLocaleString()} paid this week
+              Total pending: {currency}
+              {totalPending.toLocaleString()}
+              {dueTodayCount > 0 && <span className="text-orange-600 ml-2">• {dueTodayCount} due today</span>}
+              {overdueCount > 0 && <span className="text-red-600 ml-2">• {overdueCount} overdue</span>}
             </CardDescription>
           </div>
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
-              <Button size="sm" className="bg-gradient-to-r from-blue-500 to-indigo-600">
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="w-4 h-4 mr-1" />
                 Add
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Payable</DialogTitle>
-                <DialogDescription>Add a new bill or expense to track</DialogDescription>
+                <DialogTitle>{editingPayable ? "Edit Payable" : "Add New Payable"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="name">Name</Label>
+                  <Label htmlFor="payable-name">Name</Label>
                   <Input
-                    id="name"
+                    id="payable-name"
                     value={newPayable.name}
                     onChange={(e) => setNewPayable({ ...newPayable, name: e.target.value })}
-                    placeholder="e.g., Electricity Bill"
+                    placeholder="e.g., Internet Bill"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="amount">Amount</Label>
+                  <Label htmlFor="payable-amount">Amount ({currency})</Label>
                   <Input
-                    id="amount"
+                    id="payable-amount"
                     type="number"
                     value={newPayable.amount}
                     onChange={(e) => setNewPayable({ ...newPayable, amount: e.target.value })}
@@ -179,40 +217,46 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
                   />
                 </div>
                 <div>
-                  <Label htmlFor="dueDay">Due Day</Label>
+                  <Label htmlFor="payable-day">Due Day</Label>
                   <Select
                     value={newPayable.dueDay}
                     onValueChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select day" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {dayOrder.map((day) => (
-                        <SelectItem key={day} value={day}>
-                          {day}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="Monday">Monday</SelectItem>
+                      <SelectItem value="Tuesday">Tuesday</SelectItem>
+                      <SelectItem value="Wednesday">Wednesday</SelectItem>
+                      <SelectItem value="Thursday">Thursday</SelectItem>
+                      <SelectItem value="Friday">Friday</SelectItem>
+                      <SelectItem value="Saturday">Saturday</SelectItem>
+                      <SelectItem value="Sunday">Sunday</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="week">Week</Label>
+                  <Label htmlFor="payable-frequency">Frequency</Label>
                   <Select
-                    value={newPayable.week}
-                    onValueChange={(value) => setNewPayable({ ...newPayable, week: value })}
+                    value={newPayable.frequency}
+                    onValueChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="This Week">This Week</SelectItem>
-                      <SelectItem value="Next Week">Next Week</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="twice-monthly">Twice Monthly</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={handleAddPayable} className="w-full">
-                  Add Payable
+                <Button
+                  onClick={editingPayable ? handleUpdatePayable : handleAddPayable}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                >
+                  {editingPayable ? "Update Payable" : "Add Payable"}
                 </Button>
               </div>
             </DialogContent>
@@ -220,106 +264,69 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
         </div>
       </CardHeader>
       <CardContent>
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex justify-between text-sm mb-2">
-            <span>This Week Progress</span>
-            <span>{progressPercentage.toFixed(0)}%</span>
+        {weeklyPayables.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+            <p>No payables yet</p>
+            <p className="text-sm">Add your weekly bills to track them</p>
           </div>
-          <Progress value={progressPercentage} className="h-3" />
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="text-center p-3 bg-green-50 rounded-lg">
-            <p className="text-xs text-green-600 font-medium">Paid</p>
-            <p className="text-sm font-bold text-green-700">
-              {currency}
-              {paidThisWeek.toLocaleString()}
-            </p>
-          </div>
-          <div className="text-center p-3 bg-yellow-50 rounded-lg">
-            <p className="text-xs text-yellow-600 font-medium">Pending</p>
-            <p className="text-sm font-bold text-yellow-700">
-              {currency}
-              {pendingThisWeek.toLocaleString()}
-            </p>
-          </div>
-          <div className="text-center p-3 bg-red-50 rounded-lg">
-            <p className="text-xs text-red-600 font-medium">Overdue</p>
-            <p className="text-sm font-bold text-red-700">
-              {currency}
-              {overdueThisWeek.toLocaleString()}
-            </p>
-          </div>
-        </div>
-
-        {/* This Week Payables */}
-        <div className="space-y-4">
-          <h4 className="font-medium text-gray-800">This Week ({currentDay})</h4>
-          {thisWeekPayables.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No payables for this week</p>
-          ) : (
-            <div className="space-y-2">
-              {thisWeekPayables.map((payable) => (
-                <div key={payable.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(payable)}
-                    <div>
-                      <p className="font-medium text-gray-800">{payable.name}</p>
-                      <p className="text-xs text-gray-600">Due {payable.dueDay}</p>
+        ) : (
+          <div className="space-y-3">
+            {weeklyPayables.map((payable) => {
+              const status = getBillStatus(payable)
+              return (
+                <div
+                  key={payable.id}
+                  className={`flex justify-between items-center p-3 rounded-lg border ${
+                    status === "overdue"
+                      ? "bg-red-50 border-red-200"
+                      : status === "due-today"
+                        ? "bg-orange-50 border-orange-200"
+                        : status === "paid"
+                          ? "bg-green-50 border-green-200"
+                          : "bg-blue-50 border-blue-200"
+                  }`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-medium text-gray-800">{payable.name}</h4>
+                      {getStatusBadge(payable)}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-800">
+                    <p className="text-sm text-gray-600">
                       {currency}
-                      {payable.amount.toLocaleString()}
-                    </span>
-                    {getStatusBadge(payable)}
+                      {(payable.amount || 0).toLocaleString()} • {payable.dueDay}
+                    </p>
+                    {payable.frequency && (
+                      <Badge variant="outline" className="text-xs mt-1">
+                        {payable.frequency}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
                     <Button
                       size="sm"
-                      variant={payable.status === "paid" ? "outline" : "default"}
-                      onClick={() => togglePayableStatus(payable.id)}
-                      className="ml-2"
+                      variant="outline"
+                      onClick={() => handleEditPayable(payable)}
+                      className="text-gray-600 hover:text-gray-800"
                     >
-                      {payable.status === "paid" ? "Unpay" : "Pay"}
+                      <Edit className="w-4 h-4" />
                     </Button>
+                    {payable.status === "pending" && (
+                      <Button
+                        size="sm"
+                        onClick={() => handlePayBill(payable.id)}
+                        className={`text-white ${getButtonColor(payable)}`}
+                      >
+                        <Check className="w-4 h-4 mr-1" />
+                        Pay
+                      </Button>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Next Week Preview */}
-          {nextWeekPayables.length > 0 && (
-            <>
-              <h4 className="font-medium text-gray-800 mt-6">Next Week</h4>
-              <div className="space-y-2">
-                {nextWeekPayables.map((payable) => (
-                  <div
-                    key={payable.id}
-                    className="flex items-center justify-between p-3 bg-blue-50 rounded-lg opacity-75"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Clock className="w-4 h-4 text-blue-500" />
-                      <div>
-                        <p className="font-medium text-gray-800">{payable.name}</p>
-                        <p className="text-xs text-gray-600">Due {payable.dueDay}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-gray-800">
-                        {currency}
-                        {payable.amount.toLocaleString()}
-                      </span>
-                      <Badge className="bg-blue-100 text-blue-800">Upcoming</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
