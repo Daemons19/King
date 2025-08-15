@@ -1,4 +1,4 @@
-const CACHE_NAME = "budget-tracker-v2"
+const CACHE_NAME = "budget-tracker-v33"
 const urlsToCache = ["/", "/manifest.json", "/placeholder-logo.png", "/offline.html"]
 
 // Install event - cache resources
@@ -52,7 +52,7 @@ self.addEventListener("sync", (event) => {
   }
 })
 
-// Push notification event
+// Enhanced push notification event with weekly payables support
 self.addEventListener("push", (event) => {
   const options = {
     body: event.data ? event.data.text() : "Budget reminder!",
@@ -89,13 +89,16 @@ self.addEventListener("notificationclick", (event) => {
   }
 })
 
-// Daily notification scheduler
+// Enhanced message handler for weekly payables notifications
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
     scheduleNotifications(event.data.payload)
+  } else if (event.data && event.data.type === "SCHEDULE_WEEKLY_NOTIFICATIONS") {
+    scheduleWeeklyPayableNotifications(event.data.payload)
   }
 })
 
+// Original daily notification scheduler
 function scheduleNotifications(data) {
   // Schedule morning notification (8 AM Manila time)
   const morningTime = new Date()
@@ -130,6 +133,65 @@ function scheduleNotifications(data) {
     })
   }, eveningTime.getTime() - Date.now())
 }
+
+// New weekly payables notification scheduler
+function scheduleWeeklyPayableNotifications(data) {
+  const { weeklyPayables, currency, notifications } = data
+
+  notifications.forEach((notification) => {
+    const scheduledTime = new Date(notification.scheduledTime)
+    const now = new Date()
+    const timeUntilNotification = scheduledTime.getTime() - now.getTime()
+
+    if (timeUntilNotification > 0) {
+      setTimeout(() => {
+        // Check if the payable is still unpaid before sending notification
+        self.registration.showNotification(
+          notification.type === "saturday-reminder" ? "Bill Reminder 📅" : "Final Reminder ⚠️",
+          {
+            body: notification.message,
+            icon: "/placeholder-logo.png",
+            badge: "/placeholder-logo.png",
+            tag: notification.id,
+            data: {
+              payableId: notification.payableId,
+              type: notification.type,
+            },
+            actions: [
+              {
+                action: "view-bills",
+                title: "View Bills",
+                icon: "/placeholder-logo.png",
+              },
+              {
+                action: "dismiss",
+                title: "Dismiss",
+                icon: "/placeholder-logo.png",
+              },
+            ],
+          },
+        )
+      }, timeUntilNotification)
+    }
+  })
+}
+
+// Enhanced notification click handler
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+
+  if (event.action === "view-bills") {
+    event.waitUntil(clients.openWindow("/?tab=payables"))
+  } else if (event.action === "explore") {
+    event.waitUntil(clients.openWindow("/"))
+  } else if (event.action === "dismiss") {
+    // Just close the notification
+    return
+  } else {
+    // Default action - open app
+    event.waitUntil(clients.openWindow("/"))
+  }
+})
 
 async function syncData() {
   // Sync any pending data when connection is restored

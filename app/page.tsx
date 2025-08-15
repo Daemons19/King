@@ -263,6 +263,7 @@ export default function BudgetingApp() {
       localStorage.removeItem("dailyBudgetAppData")
       localStorage.removeItem("monthlyPayables")
       localStorage.removeItem("biweeklyPayables")
+      localStorage.removeItem("weeklyPayablesHistory")
 
       // Reset all state to empty/default values
       setDashboardData({
@@ -322,7 +323,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v33</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -810,7 +811,7 @@ export default function BudgetingApp() {
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
               <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 text-white">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-bold">Notifications & Alerts</h2>
+                  <h2 className="text-xl font-bold">Enhanced Notifications</h2>
                   <Button
                     variant="ghost"
                     size="sm"

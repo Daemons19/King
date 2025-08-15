@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Bell, Clock, AlertCircle, CheckCircle } from "lucide-react"
+import { Bell, Clock, AlertCircle, CheckCircle, Calendar } from "lucide-react"
 
 interface NotificationManagerProps {
   weeklyPayables: any[]
@@ -18,6 +18,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>("default")
   const [lastNotificationTime, setLastNotificationTime] = useState<string>("")
+  const [scheduledNotifications, setScheduledNotifications] = useState<any[]>([])
 
   // Check notification permission on mount
   useEffect(() => {
@@ -33,6 +34,16 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
       if (lastTime) {
         setLastNotificationTime(lastTime)
       }
+
+      // Load scheduled notifications
+      const scheduled = localStorage.getItem("scheduledNotifications")
+      if (scheduled) {
+        try {
+          setScheduledNotifications(JSON.parse(scheduled))
+        } catch {
+          setScheduledNotifications([])
+        }
+      }
     }
   }, [])
 
@@ -45,7 +56,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
       if (result === "granted") {
         setNotificationsEnabled(true)
         localStorage.setItem("notificationsEnabled", "true")
-        scheduleNotifications()
+        scheduleWeeklyPayableNotifications()
 
         // Show welcome notification
         showNotification("Notifications Enabled! 🎉", {
@@ -75,20 +86,103 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
     }
   }
 
-  // Schedule daily notifications
-  const scheduleNotifications = () => {
+  // Schedule weekly payable notifications (Saturday 8 PM, Sunday 8 PM)
+  const scheduleWeeklyPayableNotifications = () => {
     if (!notificationsEnabled) return
+
+    const unpaidPayables = weeklyPayables.filter((p) => p.status === "pending")
+    const newScheduledNotifications: any[] = []
+
+    unpaidPayables.forEach((payable) => {
+      const now = new Date()
+      const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
+
+      // Schedule Saturday 8 PM notification
+      const saturday8PM = new Date()
+      if (currentDay <= 6) {
+        // If it's not past Saturday
+        saturday8PM.setDate(now.getDate() + (6 - currentDay)) // Next Saturday
+      } else {
+        saturday8PM.setDate(now.getDate() + 7) // Next week Saturday
+      }
+      saturday8PM.setHours(20, 0, 0, 0) // 8 PM
+
+      // Schedule Sunday 8 PM notification
+      const sunday8PM = new Date(saturday8PM)
+      sunday8PM.setDate(saturday8PM.getDate() + 1) // Next day (Sunday)
+
+      // Create notification entries
+      const saturdayNotification = {
+        id: `sat-${payable.id}`,
+        payableId: payable.id,
+        payableName: payable.name,
+        amount: payable.amount,
+        scheduledTime: saturday8PM.toISOString(),
+        type: "saturday-reminder",
+        message: `Bill Reminder: ${payable.name} - ${currency}${payable.amount.toLocaleString()} is due today (Saturday)`,
+      }
+
+      const sundayNotification = {
+        id: `sun-${payable.id}`,
+        payableId: payable.id,
+        payableName: payable.name,
+        amount: payable.amount,
+        scheduledTime: sunday8PM.toISOString(),
+        type: "sunday-reminder",
+        message: `Final Reminder: ${payable.name} - ${currency}${payable.amount.toLocaleString()} is still unpaid. Due yesterday.`,
+      }
+
+      newScheduledNotifications.push(saturdayNotification, sundayNotification)
+
+      // Set actual timeouts for notifications
+      const saturdayTimeout = saturday8PM.getTime() - now.getTime()
+      const sundayTimeout = sunday8PM.getTime() - now.getTime()
+
+      if (saturdayTimeout > 0) {
+        setTimeout(() => {
+          // Check if payable is still unpaid
+          const currentPayables = JSON.parse(localStorage.getItem("dailyBudgetAppData") || "{}")
+          const currentWeeklyPayables = currentPayables.weeklyPayables || []
+          const currentPayable = currentWeeklyPayables.find((p: any) => p.id === payable.id)
+
+          if (currentPayable && currentPayable.status === "pending") {
+            showNotification("Bill Reminder 📅", {
+              body: saturdayNotification.message,
+              tag: saturdayNotification.id,
+            })
+          }
+        }, saturdayTimeout)
+      }
+
+      if (sundayTimeout > 0) {
+        setTimeout(() => {
+          // Check if payable is still unpaid
+          const currentPayables = JSON.parse(localStorage.getItem("dailyBudgetAppData") || "{}")
+          const currentWeeklyPayables = currentPayables.weeklyPayables || []
+          const currentPayable = currentWeeklyPayables.find((p: any) => p.id === payable.id)
+
+          if (currentPayable && currentPayable.status === "pending") {
+            showNotification("Final Reminder ⚠️", {
+              body: sundayNotification.message,
+              tag: sundayNotification.id,
+            })
+          }
+        }, sundayTimeout)
+      }
+    })
+
+    setScheduledNotifications(newScheduledNotifications)
+    localStorage.setItem("scheduledNotifications", JSON.stringify(newScheduledNotifications))
 
     // Register service worker for background notifications
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.ready.then((registration) => {
-        // Send data to service worker for scheduling
         registration.active?.postMessage({
-          type: "SCHEDULE_NOTIFICATIONS",
+          type: "SCHEDULE_WEEKLY_NOTIFICATIONS",
           payload: {
-            weeklyPayables,
-            dailyIncome,
+            weeklyPayables: unpaidPayables,
             currency,
+            notifications: newScheduledNotifications,
           },
         })
       })
@@ -105,7 +199,11 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
       localStorage.setItem("notificationsEnabled", newState.toString())
 
       if (newState) {
-        scheduleNotifications()
+        scheduleWeeklyPayableNotifications()
+      } else {
+        // Clear scheduled notifications
+        setScheduledNotifications([])
+        localStorage.removeItem("scheduledNotifications")
       }
     }
   }
@@ -215,7 +313,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
         <CardHeader>
           <CardTitle className="text-gray-800 flex items-center gap-2">
             <Bell className="w-5 h-5 text-purple-600" />
-            Notification Settings
+            Enhanced Notification System
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -224,7 +322,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
               <Label htmlFor="notifications-toggle" className="text-sm font-medium">
                 Enable Notifications
               </Label>
-              <p className="text-xs text-gray-600">Get daily reminders and bill alerts</p>
+              <p className="text-xs text-gray-600">Get daily reminders and automated bill alerts</p>
             </div>
             <Switch id="notifications-toggle" checked={notificationsEnabled} onCheckedChange={toggleNotifications} />
           </div>
@@ -239,6 +337,14 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
 
           {notificationsEnabled && (
             <div className="space-y-2">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-800">
+                  ✅ Enhanced notifications enabled with automatic bill reminders
+                </p>
+                <p className="text-xs text-green-600 mt-1">• Saturday 8:00 PM: First reminder for unpaid bills</p>
+                <p className="text-xs text-green-600">• Sunday 8:00 PM: Final reminder for unpaid bills</p>
+              </div>
+
               <Button onClick={testNotification} variant="outline" className="w-full bg-transparent">
                 <Bell className="w-4 h-4 mr-2" />
                 Test Notification
@@ -251,6 +357,39 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
           )}
         </CardContent>
       </Card>
+
+      {/* Scheduled Notifications */}
+      {scheduledNotifications.length > 0 && (
+        <Card className="bg-white/90 border-0">
+          <CardHeader>
+            <CardTitle className="text-gray-800 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              Scheduled Notifications ({scheduledNotifications.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {scheduledNotifications.map((notification, index) => (
+                <div key={index} className="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-blue-800">{notification.payableName}</p>
+                    <p className="text-xs text-blue-600">
+                      {notification.type === "saturday-reminder" ? "Saturday 8 PM" : "Sunday 8 PM"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium">
+                      {currency}
+                      {notification.amount.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-gray-500">{new Date(notification.scheduledTime).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Today's Alerts */}
       <Card className="bg-white/90 border-0">
@@ -280,7 +419,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
                 ))}
               </div>
               <Button onClick={sendBillReminder} size="sm" className="w-full mt-2 bg-orange-600">
-                Send Reminder
+                Send Reminder Now
               </Button>
             </div>
           )}
@@ -359,7 +498,7 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
         <CardHeader>
           <CardTitle className="text-gray-800 flex items-center gap-2">
             <Clock className="w-5 h-5 text-blue-600" />
-            Daily Schedule
+            Automated Schedule
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -382,10 +521,18 @@ export function NotificationManager({ weeklyPayables, dailyIncome, currency }: N
 
             <div className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
               <div>
-                <p className="font-medium text-orange-800">Bill Reminders</p>
-                <p className="text-xs text-orange-600">When bills are due</p>
+                <p className="font-medium text-orange-800">Saturday Bill Reminder</p>
+                <p className="text-xs text-orange-600">8:00 PM Manila Time</p>
               </div>
-              <Badge className="bg-orange-100 text-orange-800">As Needed</Badge>
+              <Badge className="bg-orange-100 text-orange-800">Weekly</Badge>
+            </div>
+
+            <div className="flex items-center justify-between p-2 bg-red-50 rounded-lg">
+              <div>
+                <p className="font-medium text-red-800">Sunday Final Reminder</p>
+                <p className="text-xs text-red-600">8:00 PM Manila Time</p>
+              </div>
+              <Badge className="bg-red-100 text-red-800">Weekly</Badge>
             </div>
           </div>
         </CardContent>

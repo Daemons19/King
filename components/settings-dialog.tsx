@@ -1,5 +1,7 @@
 "use client"
 
+import { CardDescription } from "@/components/ui/card"
+
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -10,7 +12,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Plus, AlertTriangle, Copy, Calendar, Edit2, Check, X } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import {
+  Trash2,
+  Plus,
+  AlertTriangle,
+  Copy,
+  Calendar,
+  Edit2,
+  Check,
+  X,
+  History,
+  TrendingUp,
+  TrendingDown,
+  Target,
+  DollarSign,
+} from "lucide-react"
 import { BiweeklyScheduler } from "./biweekly-scheduler"
 
 // Helper functions
@@ -120,6 +137,120 @@ const getBiWeeklySchedule = (currentWeek: number, totalWeeks: number) => {
   }
 }
 
+// Helper function to get previous weeks
+const getPreviousWeeks = (weeksBack = 8) => {
+  const weeks = []
+  const today = new Date()
+
+  for (let i = 1; i <= weeksBack; i++) {
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - (today.getDay() === 0 ? 6 : today.getDay() - 1) - i * 7)
+
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 6)
+
+    weeks.push({
+      weekNumber: i,
+      startDate: weekStart,
+      endDate: weekEnd,
+      range: `${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`,
+      key: `${weekStart.getFullYear()}-W${Math.ceil((weekStart.getDate() + weekStart.getDay()) / 7)}`,
+    })
+  }
+
+  return weeks
+}
+
+// Helper function to calculate week summary
+const calculateWeekSummary = (
+  weekRange: string,
+  transactions: any[],
+  dailyIncome: any[],
+  weeklyPayables: any[],
+  budgetCategories: any[],
+) => {
+  // Get week start and end dates
+  const [startStr, endStr] = weekRange.split(" - ")
+  const weekStart = new Date(startStr)
+  const weekEnd = new Date(endStr)
+
+  // Filter transactions for this week
+  const weekTransactions = transactions.filter((t) => {
+    const transactionDate = new Date(t.date)
+    return transactionDate >= weekStart && transactionDate <= weekEnd
+  })
+
+  // Calculate totals
+  const totalIncome = weekTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+
+  const totalExpenses = weekTransactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+
+  // Calculate category spending for this week
+  const categorySpending = budgetCategories.map((category) => {
+    const spent = weekTransactions
+      .filter((t) => t.type === "expense" && t.category === category.name)
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+
+    return {
+      ...category,
+      weeklySpent: spent,
+      weeklyProgress: category.budgeted > 0 ? (spent / category.budgeted) * 100 : 0,
+    }
+  })
+
+  // Calculate payables for this week (if available in history)
+  const weeklyPayablesHistory = JSON.parse(localStorage.getItem("weeklyPayablesHistory") || "[]")
+  const weekHistory = weeklyPayablesHistory.find((w: any) => w.weekRange === weekRange)
+
+  let totalPayables = 0
+  let paidPayables = 0
+  let unpaidPayables = 0
+
+  if (weekHistory) {
+    totalPayables = weekHistory.payables.reduce((sum: number, p: any) => sum + p.amount, 0)
+    paidPayables = weekHistory.payables
+      .filter((p: any) => p.status === "paid")
+      .reduce((sum: number, p: any) => sum + p.amount, 0)
+    unpaidPayables = totalPayables - paidPayables
+  }
+
+  // Calculate daily income goals vs actual for this week
+  const weekDays = []
+  for (let d = new Date(weekStart); d <= weekEnd; d.setDate(d.getDate() + 1)) {
+    const dayStr = d.toLocaleDateString("en-US", { weekday: "short" })
+    const dayIncome = weekTransactions
+      .filter((t) => t.type === "income" && new Date(t.date).toDateString() === d.toDateString())
+      .reduce((sum, t) => sum + t.amount, 0)
+
+    weekDays.push({
+      day: dayStr,
+      date: d.toLocaleDateString(),
+      income: dayIncome,
+      goal: dayStr === "Sun" ? 600 : 800, // Default goals
+    })
+  }
+
+  const totalGoal = weekDays.reduce((sum, day) => sum + day.goal, 0)
+  const goalAchievement = totalGoal > 0 ? (totalIncome / totalGoal) * 100 : 0
+
+  return {
+    weekRange,
+    totalIncome,
+    totalExpenses,
+    totalPayables,
+    paidPayables,
+    unpaidPayables,
+    netSavings: totalIncome - totalExpenses - paidPayables,
+    categorySpending,
+    weekDays,
+    totalGoal,
+    goalAchievement,
+    transactionCount: weekTransactions.length,
+  }
+}
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -154,7 +285,7 @@ export function SettingsDialog({
   const [newPayable, setNewPayable] = useState({
     name: "",
     amount: "",
-    dueDay: "Monday",
+    dueDay: "Saturday", // Changed default to Saturday
     status: "pending",
     week: "This Week",
     frequency: "weekly",
@@ -165,6 +296,8 @@ export function SettingsDialog({
   const [editPayableData, setEditPayableData] = useState<any>({})
 
   const [monthlyPayables, setMonthlyPayables] = useState<any>({})
+  const [previousWeeks, setPreviousWeeks] = useState<any[]>([])
+  const [selectedWeekSummary, setSelectedWeekSummary] = useState<any>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem("monthlyPayables")
@@ -185,11 +318,17 @@ export function SettingsDialog({
     }
   }, [])
 
+  // Load previous weeks data
+  useEffect(() => {
+    const weeks = getPreviousWeeks(8)
+    setPreviousWeeks(weeks)
+  }, [])
+
   const [newMonthlyPayable, setNewMonthlyPayable] = useState({
     name: "",
     amount: "",
     date: "",
-    dueDay: "Monday",
+    dueDay: "Saturday", // Changed default to Saturday
     week: "Week 1",
     frequency: "monthly",
     paidCount: 0,
@@ -214,7 +353,7 @@ export function SettingsDialog({
         ...newMonthlyPayable,
         date: "",
         week: "Week 1",
-        dueDay: "Monday",
+        dueDay: "Saturday", // Changed default to Saturday
       })
     }
   }
@@ -260,7 +399,7 @@ export function SettingsDialog({
       setNewPayable({
         name: "",
         amount: "",
-        dueDay: "Monday",
+        dueDay: "Saturday", // Changed default to Saturday
         status: "pending",
         week: "This Week",
         frequency: "weekly",
@@ -346,7 +485,7 @@ export function SettingsDialog({
         name: "",
         amount: "",
         date: "",
-        dueDay: "Monday",
+        dueDay: "Saturday", // Changed default to Saturday
         week: "Week 1",
         frequency: "monthly",
         paidCount: 0,
@@ -494,6 +633,12 @@ export function SettingsDialog({
     { value: "from-yellow-500 to-orange-500", label: "Yellow to Orange" },
     { value: "from-teal-500 to-cyan-500", label: "Teal to Cyan" },
   ]
+
+  // Generate week summary when selected
+  const handleWeekSelect = (weekRange: string) => {
+    const summary = calculateWeekSummary(weekRange, [], dailyIncome, weeklyPayables, budgetCategories)
+    setSelectedWeekSummary(summary)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -667,7 +812,7 @@ export function SettingsDialog({
             {/* Weekly Payables */}
             <Card className="bg-white/90 border-0">
               <CardHeader>
-                <CardTitle className="text-gray-800">Weekly Bills</CardTitle>
+                <CardTitle className="text-gray-800">Weekly Bills (Default: Saturday)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {weeklyPayables.map((payable) => (
@@ -691,7 +836,7 @@ export function SettingsDialog({
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <Select
-                            value={editPayableData.dueDay || "Monday"}
+                            value={editPayableData.dueDay || "Saturday"}
                             onValueChange={(value) => setEditPayableData({ ...editPayableData, dueDay: value })}
                           >
                             <SelectTrigger className="bg-white h-9">
@@ -703,7 +848,7 @@ export function SettingsDialog({
                               <SelectItem value="Wednesday">Wednesday</SelectItem>
                               <SelectItem value="Thursday">Thursday</SelectItem>
                               <SelectItem value="Friday">Friday</SelectItem>
-                              <SelectItem value="Saturday">Saturday</SelectItem>
+                              <SelectItem value="Saturday">Saturday (Default)</SelectItem>
                               <SelectItem value="Sunday">Sunday</SelectItem>
                             </SelectContent>
                           </Select>
@@ -829,7 +974,7 @@ export function SettingsDialog({
                         <SelectItem value="Wednesday">Wednesday</SelectItem>
                         <SelectItem value="Thursday">Thursday</SelectItem>
                         <SelectItem value="Friday">Friday</SelectItem>
-                        <SelectItem value="Saturday">Saturday</SelectItem>
+                        <SelectItem value="Saturday">Saturday (Default)</SelectItem>
                         <SelectItem value="Sunday">Sunday</SelectItem>
                       </SelectContent>
                     </Select>
@@ -849,7 +994,7 @@ export function SettingsDialog({
                   </div>
                   <Button onClick={addPayable} className="w-full bg-gradient-to-r from-orange-600 to-red-600">
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Bill
+                    Add Bill (Default: Saturday)
                   </Button>
                 </div>
               </CardContent>
@@ -1068,6 +1213,196 @@ export function SettingsDialog({
           </TabsContent>
 
           <TabsContent value="data" className="space-y-4">
+            {/* Previous Weeks Budget Audit */}
+            <Card className="bg-white/90 border-0">
+              <CardHeader>
+                <CardTitle className="text-gray-800 flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-600" />
+                  Previous Weeks Budget Audit
+                </CardTitle>
+                <CardDescription>Review your budget performance from previous weeks</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Week Selection */}
+                <div className="space-y-2">
+                  <Label>Select Previous Week</Label>
+                  <Select onValueChange={handleWeekSelect}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Choose a week to audit..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {previousWeeks.map((week) => (
+                        <SelectItem key={week.key} value={week.range}>
+                          Week {week.weekNumber} ago - {week.range}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Week Summary Display */}
+                {selectedWeekSummary && (
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border">
+                      <h3 className="font-semibold text-gray-800 mb-3">
+                        Week Summary: {selectedWeekSummary.weekRange}
+                      </h3>
+
+                      {/* Key Metrics */}
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="bg-white p-3 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <TrendingUp className="w-4 h-4 text-green-600" />
+                            <span className="text-sm text-gray-600">Total Income</span>
+                          </div>
+                          <div className="text-lg font-bold text-green-600">
+                            {currency}
+                            {selectedWeekSummary.totalIncome.toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <TrendingDown className="w-4 h-4 text-red-600" />
+                            <span className="text-sm text-gray-600">Total Expenses</span>
+                          </div>
+                          <div className="text-lg font-bold text-red-600">
+                            {currency}
+                            {selectedWeekSummary.totalExpenses.toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Target className="w-4 h-4 text-blue-600" />
+                            <span className="text-sm text-gray-600">Goal Achievement</span>
+                          </div>
+                          <div className="text-lg font-bold text-blue-600">
+                            {selectedWeekSummary.goalAchievement.toFixed(1)}%
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <DollarSign className="w-4 h-4 text-purple-600" />
+                            <span className="text-sm text-gray-600">Net Savings</span>
+                          </div>
+                          <div
+                            className={`text-lg font-bold ${selectedWeekSummary.netSavings >= 0 ? "text-green-600" : "text-red-600"}`}
+                          >
+                            {currency}
+                            {selectedWeekSummary.netSavings.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Goal Progress */}
+                      <div className="bg-white p-3 rounded-lg mb-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-medium text-gray-700">Weekly Goal Progress</span>
+                          <span className="text-sm text-gray-600">
+                            {currency}
+                            {selectedWeekSummary.totalIncome.toLocaleString()} / {currency}
+                            {selectedWeekSummary.totalGoal.toLocaleString()}
+                          </span>
+                        </div>
+                        <Progress value={selectedWeekSummary.goalAchievement} className="h-2" />
+                      </div>
+
+                      {/* Daily Breakdown */}
+                      <div className="bg-white p-3 rounded-lg mb-4">
+                        <h4 className="font-medium text-gray-800 mb-2">Daily Income Breakdown</h4>
+                        <div className="space-y-2">
+                          {selectedWeekSummary.weekDays.map((day: any, index: number) => (
+                            <div key={index} className="flex justify-between items-center text-sm">
+                              <span className="text-gray-600">
+                                {day.day} ({day.date})
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`font-medium ${day.income >= day.goal ? "text-green-600" : "text-red-600"}`}
+                                >
+                                  {currency}
+                                  {day.income.toLocaleString()}
+                                </span>
+                                <span className="text-gray-400">
+                                  / {currency}
+                                  {day.goal.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Category Spending */}
+                      {selectedWeekSummary.categorySpending.length > 0 && (
+                        <div className="bg-white p-3 rounded-lg mb-4">
+                          <h4 className="font-medium text-gray-800 mb-2">Category Spending</h4>
+                          <div className="space-y-2">
+                            {selectedWeekSummary.categorySpending.map((category: any, index: number) => (
+                              <div key={index} className="space-y-1">
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-600">{category.name}</span>
+                                  <span
+                                    className={`font-medium ${category.weeklySpent > category.budgeted ? "text-red-600" : "text-green-600"}`}
+                                  >
+                                    {currency}
+                                    {category.weeklySpent.toLocaleString()} / {currency}
+                                    {category.budgeted.toLocaleString()}
+                                  </span>
+                                </div>
+                                <Progress value={Math.min(category.weeklyProgress, 100)} className="h-1" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Payables Summary */}
+                      {selectedWeekSummary.totalPayables > 0 && (
+                        <div className="bg-white p-3 rounded-lg">
+                          <h4 className="font-medium text-gray-800 mb-2">Payables Summary</h4>
+                          <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div className="text-center">
+                              <div className="text-gray-600">Total</div>
+                              <div className="font-medium">
+                                {currency}
+                                {selectedWeekSummary.totalPayables.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-600">Paid</div>
+                              <div className="font-medium text-green-600">
+                                {currency}
+                                {selectedWeekSummary.paidPayables.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-600">Unpaid</div>
+                              <div className="font-medium text-red-600">
+                                {currency}
+                                {selectedWeekSummary.unpaidPayables.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!selectedWeekSummary && (
+                  <div className="text-center py-8 text-gray-500">
+                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>Select a previous week to view budget audit</p>
+                    <p className="text-sm">Review your income, expenses, and goal achievement</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Clear Data Section */}
             <Card className="bg-white/90 border-0">
               <CardHeader>
                 <CardTitle className="text-gray-800 flex items-center gap-2">
