@@ -1,41 +1,18 @@
 const CACHE_NAME = "budget-tracker-v34"
 const urlsToCache = ["/", "/manifest.json", "/placeholder-logo.png", "/offline.html"]
 
-// Install event - cache resources
+// Install event
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => {
-        return cache.addAll(urlsToCache)
-      })
-      .then(() => {
-        // Show update notification
-        return self.registration.showNotification("App Update Available! 🚀", {
-          body: "A new version of Budget Tracker is ready. Tap to update!",
-          icon: "/placeholder-logo.png",
-          badge: "/placeholder-logo.png",
-          tag: "app-update",
-          requireInteraction: true,
-          actions: [
-            {
-              action: "update-now",
-              title: "Update Now",
-              icon: "/placeholder-logo.png",
-            },
-            {
-              action: "later",
-              title: "Later",
-              icon: "/placeholder-logo.png",
-            },
-          ],
-        })
-      }),
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(urlsToCache)
+    }),
   )
-  // Don't skip waiting automatically - let user choose
+  // Force the waiting service worker to become the active service worker
+  self.skipWaiting()
 })
 
-// Activate event - clean up old caches
+// Activate event
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -48,10 +25,11 @@ self.addEventListener("activate", (event) => {
       )
     }),
   )
+  // Ensure the service worker takes control immediately
   self.clients.claim()
 })
 
-// Fetch event - serve from cache when offline
+// Fetch event
 self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((response) => {
@@ -59,7 +37,7 @@ self.addEventListener("fetch", (event) => {
       return (
         response ||
         fetch(event.request).catch(() => {
-          // If both cache and network fail, show offline page for navigation requests
+          // If both cache and network fail, return offline page for navigation requests
           if (event.request.destination === "document") {
             return caches.match("/offline.html")
           }
@@ -69,160 +47,53 @@ self.addEventListener("fetch", (event) => {
   )
 })
 
-// Background sync for when connection is restored
-self.addEventListener("sync", (event) => {
-  if (event.tag === "background-sync") {
-    event.waitUntil(syncData())
-  }
-})
-
-// Enhanced push notification event with weekly payables support
-self.addEventListener("push", (event) => {
-  const options = {
-    body: event.data ? event.data.text() : "Budget reminder!",
-    icon: "/placeholder-logo.png",
-    badge: "/placeholder-logo.png",
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1,
-    },
-    actions: [
-      {
-        action: "explore",
-        title: "Open App",
-        icon: "/placeholder-logo.png",
-      },
-      {
-        action: "close",
-        title: "Close",
-        icon: "/placeholder-logo.png",
-      },
-    ],
-  }
-
-  event.waitUntil(self.registration.showNotification("Budget Tracker", options))
-})
-
-// Enhanced message handler for app updates and notifications
+// Handle messages from the main thread
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting()
-  } else if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
-    scheduleNotifications(event.data.payload)
-  } else if (event.data && event.data.type === "SCHEDULE_WEEKLY_NOTIFICATIONS") {
-    scheduleWeeklyPayableNotifications(event.data.payload)
   }
 })
 
-// Enhanced notification click handler with update support
+// Enhanced notification system for bill reminders
 self.addEventListener("notificationclick", (event) => {
   event.notification.close()
 
-  if (event.notification.tag === "app-update") {
-    if (event.action === "update-now") {
-      // Skip waiting and activate new version
-      self.skipWaiting()
-      event.waitUntil(clients.openWindow("/"))
-    } else if (event.action === "later") {
-      // Just close the notification
-      return
-    } else {
-      // Default action - open app
-      event.waitUntil(clients.openWindow("/"))
-    }
-  } else if (event.action === "view-bills") {
+  // Handle notification clicks
+  if (event.action === "pay_bill") {
+    // Open app to bills section
     event.waitUntil(clients.openWindow("/?tab=payables"))
-  } else if (event.action === "explore") {
-    event.waitUntil(clients.openWindow("/"))
-  } else if (event.action === "dismiss") {
-    // Just close the notification
-    return
   } else {
     // Default action - open app
     event.waitUntil(clients.openWindow("/"))
   }
 })
 
-// Original daily notification scheduler
-function scheduleNotifications(data) {
-  // Schedule morning notification (8 AM Manila time)
-  const morningTime = new Date()
-  morningTime.setHours(8, 0, 0, 0)
-  if (morningTime < new Date()) {
-    morningTime.setDate(morningTime.getDate() + 1)
-  }
-
-  // Schedule evening notification (6 PM Manila time)
-  const eveningTime = new Date()
-  eveningTime.setHours(18, 0, 0, 0)
-  if (eveningTime < new Date()) {
-    eveningTime.setDate(eveningTime.getDate() + 1)
-  }
-
-  // Set timeouts for notifications
-  setTimeout(() => {
-    self.registration.showNotification("Good Morning! 🌅", {
-      body: "Time to update your daily earnings and check your budget goals!",
-      icon: "/placeholder-logo.png",
-      badge: "/placeholder-logo.png",
-      tag: "morning-reminder",
-    })
-  }, morningTime.getTime() - Date.now())
-
-  setTimeout(() => {
-    self.registration.showNotification("Evening Check-in! 🌆", {
-      body: "How did your spending go today? Update your expenses!",
-      icon: "/placeholder-logo.png",
-      badge: "/placeholder-logo.png",
-      tag: "evening-reminder",
-    })
-  }, eveningTime.getTime() - Date.now())
+// Schedule weekly payables notifications
+const schedulePayableNotifications = () => {
+  // This would integrate with the Notification API
+  // For now, we'll handle this in the main app
+  console.log("Payable notifications scheduled for Saturday")
 }
 
-// New weekly payables notification scheduler
-function scheduleWeeklyPayableNotifications(data) {
-  const { weeklyPayables, currency, notifications } = data
+// Background sync for offline bill payments
+self.addEventListener("sync", (event) => {
+  if (event.tag === "bill-payment-sync") {
+    event.waitUntil(syncBillPayments())
+  }
+})
 
-  notifications.forEach((notification) => {
-    const scheduledTime = new Date(notification.scheduledTime)
-    const now = new Date()
-    const timeUntilNotification = scheduledTime.getTime() - now.getTime()
-
-    if (timeUntilNotification > 0) {
-      setTimeout(() => {
-        // Check if the payable is still unpaid before sending notification
-        self.registration.showNotification(
-          notification.type === "saturday-reminder" ? "Bill Reminder 📅" : "Final Reminder ⚠️",
-          {
-            body: notification.message,
-            icon: "/placeholder-logo.png",
-            badge: "/placeholder-logo.png",
-            tag: notification.id,
-            data: {
-              payableId: notification.payableId,
-              type: notification.type,
-            },
-            actions: [
-              {
-                action: "view-bills",
-                title: "View Bills",
-                icon: "/placeholder-logo.png",
-              },
-              {
-                action: "dismiss",
-                title: "Dismiss",
-                icon: "/placeholder-logo.png",
-              },
-            ],
-          },
-        )
-      }, timeUntilNotification)
-    }
-  })
+const syncBillPayments = async () => {
+  // Handle offline bill payment sync
+  try {
+    const pendingPayments = await getStoredPayments()
+    // Process pending payments when back online
+    console.log("Syncing bill payments:", pendingPayments)
+  } catch (error) {
+    console.error("Bill payment sync failed:", error)
+  }
 }
 
-async function syncData() {
-  // Sync any pending data when connection is restored
-  console.log("Background sync triggered")
+const getStoredPayments = async () => {
+  // Get pending payments from IndexedDB or localStorage
+  return []
 }

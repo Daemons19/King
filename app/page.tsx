@@ -139,13 +139,34 @@ const initializeDailyIncome = () => {
   }))
 }
 
+// Safe localStorage access
+const safeLocalStorage = {
+  getItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+  removeItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(key)
+    }
+  },
+}
+
 export default function BudgetingApp() {
   const [showAddTransaction, setShowAddTransaction] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [activeTab, setActiveTab] = useState("home")
-  const [currentTime, setCurrentTime] = useState(getManilaTime())
+  const [currentTime, setCurrentTime] = useState("")
   const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
+  const [isClient, setIsClient] = useState(false)
 
   // State with localStorage persistence
   const [dashboardData, setDashboardData] = useState(defaultDashboardData)
@@ -154,18 +175,28 @@ export default function BudgetingApp() {
   const [transactions, setTransactions] = useState(defaultTransactions)
   const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
 
+  // Set client-side flag and initialize time
+  useEffect(() => {
+    setIsClient(true)
+    setCurrentTime(getManilaTime())
+  }, [])
+
   // Update time every minute
   useEffect(() => {
+    if (!isClient) return
+
     const timer = setInterval(() => {
       setCurrentTime(getManilaTime())
     }, 60000) // Update every minute
 
     return () => clearInterval(timer)
-  }, [])
+  }, [isClient])
 
-  // Load data from localStorage on component mount
+  // Load data from localStorage on component mount (client-side only)
   useEffect(() => {
-    const savedData = localStorage.getItem("dailyBudgetAppData")
+    if (!isClient) return
+
+    const savedData = safeLocalStorage.getItem("dailyBudgetAppData")
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData)
@@ -194,10 +225,12 @@ export default function BudgetingApp() {
         console.error("Error loading saved data:", error)
       }
     }
-  }, [])
+  }, [isClient])
 
-  // Save data to localStorage whenever state changes
+  // Save data to localStorage whenever state changes (client-side only)
   useEffect(() => {
+    if (!isClient) return
+
     const dataToSave = {
       dashboardData,
       budgetCategories,
@@ -205,8 +238,8 @@ export default function BudgetingApp() {
       transactions,
       dailyIncome,
     }
-    localStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
-  }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome])
+    safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
+  }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
 
   // Real-time calculations - recalculated on every render
   const currency = dashboardData.currency || "₱"
@@ -258,12 +291,15 @@ export default function BudgetingApp() {
 
   // Clear all data function
   const clearAllData = () => {
-    if (window.confirm("Are you sure you want to clear all data? This action cannot be undone.")) {
+    if (
+      typeof window !== "undefined" &&
+      window.confirm("Are you sure you want to clear all data? This action cannot be undone.")
+    ) {
       // Clear localStorage
-      localStorage.removeItem("dailyBudgetAppData")
-      localStorage.removeItem("monthlyPayables")
-      localStorage.removeItem("biweeklyPayables")
-      localStorage.removeItem("weeklyPayablesHistory")
+      safeLocalStorage.removeItem("dailyBudgetAppData")
+      safeLocalStorage.removeItem("monthlyPayables")
+      safeLocalStorage.removeItem("biweeklyPayables")
+      safeLocalStorage.removeItem("weeklyPayablesHistory")
 
       // Reset all state to empty/default values
       setDashboardData({
@@ -288,31 +324,43 @@ export default function BudgetingApp() {
 
   // Clear specific data functions
   const clearTransactions = () => {
-    if (window.confirm("Clear all transactions?")) {
+    if (typeof window !== "undefined" && window.confirm("Clear all transactions?")) {
       setTransactions([])
     }
   }
 
   const clearBudgetCategories = () => {
-    if (window.confirm("Clear all budget categories?")) {
+    if (typeof window !== "undefined" && window.confirm("Clear all budget categories?")) {
       setBudgetCategories([])
     }
   }
 
   const clearWeeklyPayables = () => {
-    if (window.confirm("Clear all weekly payables?")) {
+    if (typeof window !== "undefined" && window.confirm("Clear all weekly payables?")) {
       setWeeklyPayables([])
     }
   }
 
   const clearDailyIncome = () => {
-    if (window.confirm("Reset all daily income data for this week?")) {
+    if (typeof window !== "undefined" && window.confirm("Reset all daily income data for this week?")) {
       const resetIncome = dailyIncome.map((day) => ({
         ...day,
         amount: 0,
       }))
       setDailyIncome(resetIncome)
     }
+  }
+
+  // Show loading state until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading Daily Budget...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -323,7 +371,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v33</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v34</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">

@@ -33,6 +33,26 @@ import {
 } from "lucide-react"
 import { BiweeklyScheduler } from "./biweekly-scheduler"
 
+// Safe localStorage access
+const safeLocalStorage = {
+  getItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+  removeItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(key)
+    }
+  },
+}
+
 // Helper functions
 const getManilaTime = () => {
   return new Date().toLocaleString("en-US", {
@@ -204,7 +224,7 @@ const calculateWeekSummary = (
   })
 
   // Calculate payables for this week (if available in history)
-  const weeklyPayablesHistory = JSON.parse(localStorage.getItem("weeklyPayablesHistory") || "[]")
+  const weeklyPayablesHistory = JSON.parse(safeLocalStorage.getItem("weeklyPayablesHistory") || "[]")
   const weekHistory = weeklyPayablesHistory.find((w: any) => w.weekRange === weekRange)
 
   let totalPayables = 0
@@ -305,14 +325,23 @@ export function SettingsDialog({
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null)
-  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => {
-    const saved = localStorage.getItem("autoUpdateEnabled")
-    return saved ? JSON.parse(saved) : true
-  })
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
+
+  // Initialize auto-update preference from localStorage (client-side only)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = safeLocalStorage.getItem("autoUpdateEnabled")
+      if (saved) {
+        setAutoUpdateEnabled(JSON.parse(saved))
+      }
+    }
+  }, [])
 
   // Save auto-update preference
   useEffect(() => {
-    localStorage.setItem("autoUpdateEnabled", JSON.stringify(autoUpdateEnabled))
+    if (typeof window !== "undefined") {
+      safeLocalStorage.setItem("autoUpdateEnabled", JSON.stringify(autoUpdateEnabled))
+    }
   }, [autoUpdateEnabled])
 
   // Check for updates function
@@ -325,7 +354,7 @@ export function SettingsDialog({
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
       // Check if service worker has updates
-      if ("serviceWorker" in navigator) {
+      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.getRegistration()
         if (registration) {
           await registration.update()
@@ -364,7 +393,7 @@ export function SettingsDialog({
     setUpdateStatus(null)
 
     try {
-      if ("serviceWorker" in navigator) {
+      if (typeof window !== "undefined" && "serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.getRegistration()
 
         if (registration && registration.waiting) {
@@ -418,20 +447,22 @@ export function SettingsDialog({
   }
 
   useEffect(() => {
-    const saved = localStorage.getItem("monthlyPayables")
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) {
-          // Convert old array format to new object format
-          const currentMonthInfo = getCurrentMonthInfo()
-          const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
-          setMonthlyPayables({ [currentMonthKey]: parsed })
-        } else {
-          setMonthlyPayables(parsed)
+    if (typeof window !== "undefined") {
+      const saved = safeLocalStorage.getItem("monthlyPayables")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) {
+            // Convert old array format to new object format
+            const currentMonthInfo = getCurrentMonthInfo()
+            const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
+            setMonthlyPayables({ [currentMonthKey]: parsed })
+          } else {
+            setMonthlyPayables(parsed)
+          }
+        } catch {
+          setMonthlyPayables({})
         }
-      } catch {
-        setMonthlyPayables({})
       }
     }
   }, [])
@@ -598,7 +629,7 @@ export function SettingsDialog({
         color: autoColor,
       })
       setMonthlyPayables(updated)
-      localStorage.setItem("monthlyPayables", JSON.stringify(updated))
+      safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
       setNewMonthlyPayable({
         name: "",
         amount: "",
@@ -624,7 +655,7 @@ export function SettingsDialog({
         : p,
     )
     setMonthlyPayables(updated)
-    localStorage.setItem("monthlyPayables", JSON.stringify(updated))
+    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
     setEditingMonthlyPayable(null)
     setEditMonthlyPayableData({})
   }
@@ -638,7 +669,7 @@ export function SettingsDialog({
     const updated = { ...monthlyPayables }
     updated[currentMonthKey] = updated[currentMonthKey].filter((p: any) => p.id !== id)
     setMonthlyPayables(updated)
-    localStorage.setItem("monthlyPayables", JSON.stringify(updated))
+    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
   }
 
   const copyToNextMonth = () => {
@@ -663,7 +694,7 @@ export function SettingsDialog({
     }))
 
     setMonthlyPayables(updated)
-    localStorage.setItem("monthlyPayables", JSON.stringify(updated))
+    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
     alert(`Copied ${currentMonthPayables.length} payables to ${nextMonthName} ${nextYear}!`)
   }
 
@@ -738,7 +769,7 @@ export function SettingsDialog({
   }
 
   const handleDeleteCategory = (categoryId: number) => {
-    if (window.confirm("Delete this category?")) {
+    if (typeof window !== "undefined" && window.confirm("Delete this category?")) {
       setBudgetCategories(budgetCategories.filter((cat) => cat.id !== categoryId))
     }
   }
@@ -1599,15 +1630,15 @@ export function SettingsDialog({
                   <h4 className="font-medium text-gray-800 mb-2">Recent Updates</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">v34 - Enhanced Notifications</span>
+                      <span className="text-gray-600">v34 - Fixed SSR Issues</span>
                       <span className="text-xs text-gray-500">Current</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">v33 - Saturday Default Bills</span>
+                      <span className="text-gray-600">v33 - Enhanced Notifications</span>
                       <span className="text-xs text-gray-500">Previous</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">v32 - Budget Audit System</span>
+                      <span className="text-gray-600">v32 - Saturday Default Bills</span>
                       <span className="text-xs text-gray-500">Previous</span>
                     </div>
                   </div>

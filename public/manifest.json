@@ -1,15 +1,12 @@
 {
   "name": "Daily Budget Tracker v34",
   "short_name": "Budget v34",
-  "description": "Track your daily earnings and expenses with offline support",
+  "description": "Track your daily income, expenses, and weekly payables with real-time calculations",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#7c3aed",
-  "theme_color": "#7c3aed",
+  "background_color": "#8B5CF6",
+  "theme_color": "#8B5CF6",
   "orientation": "portrait",
-  "scope": "/",
-  "lang": "en",
-  "categories": ["finance", "productivity"],
   "icons": [
     {
       "src": "/placeholder-logo.png",
@@ -24,30 +21,9 @@
       "purpose": "any maskable"
     }
   ],
-  "shortcuts": [
-    {
-      "name": "Add Income",
-      "short_name": "Income",
-      "description": "Quickly add daily income",
-      "url": "/?action=add-income",
-      "icons": [
-        {
-          "src": "/placeholder-logo.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Pay Bills",
-      "short_name": "Bills",
-      "description": "View and pay weekly bills",
-      "url": "/?tab=payables",
-      "icons": [
-        {
-          "src": "/placeholder-logo.png",
-          "sizes": "96x96"
-        }
-      ]
-    }
-  ]
+  "categories": ["finance", "productivity", "utilities"],
+  "lang": "en",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false
 }
