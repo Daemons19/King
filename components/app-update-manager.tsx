@@ -24,7 +24,8 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
   const [isOnline, setIsOnline] = useState(true)
   const [isPWAInstalled, setIsPWAInstalled] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [currentVersion] = useState("v35")
+  const [currentVersion] = useState("v38")
+  const [lastUpdateCheck, setLastUpdateCheck] = useState<Date | null>(null)
 
   // Check if PWA is installed
   useEffect(() => {
@@ -69,6 +70,38 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
   // Listen for service worker updates
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      // Register service worker
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          console.log("Service Worker registered:", registration)
+
+          // Check for updates immediately
+          registration.update()
+
+          // Listen for updates
+          registration.addEventListener("updatefound", () => {
+            console.log("New service worker found")
+            const newWorker = registration.installing
+            if (newWorker) {
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  console.log("New service worker installed")
+                  setUpdateAvailable(true)
+                  setUpdateStatus({
+                    type: "info",
+                    message: "New app version available! Click download to update.",
+                  })
+                }
+              })
+            }
+          })
+        })
+        .catch((error) => {
+          console.error("Service Worker registration failed:", error)
+        })
+
+      // Listen for service worker messages
       navigator.serviceWorker.addEventListener("message", (event) => {
         if (event.data && event.data.type === "UPDATE_AVAILABLE") {
           setUpdateAvailable(true)
@@ -99,15 +132,20 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
 
     setIsCheckingUpdates(true)
     setUpdateStatus(null)
+    setLastUpdateCheck(new Date())
 
     try {
-      // Simulate checking for updates
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Force cache bust by adding timestamp
+      const timestamp = Date.now()
 
       if (typeof window !== "undefined" && "serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.getRegistration()
         if (registration) {
+          // Force update check
           await registration.update()
+
+          // Wait a bit for the update to process
+          await new Promise((resolve) => setTimeout(resolve, 2000))
 
           // Check if there's a waiting service worker
           if (registration.waiting) {
@@ -116,20 +154,63 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
               type: "info",
               message: "New version available! Click download to update.",
             })
-          } else {
+          } else if (registration.installing) {
             setUpdateStatus({
-              type: "success",
-              message: "You have the latest version!",
+              type: "info",
+              message: "Checking for updates...",
             })
+            // Wait for installation to complete
+            setTimeout(() => checkForUpdates(), 3000)
+          } else {
+            // Try to fetch a version endpoint to check for updates
+            try {
+              const response = await fetch(`/manifest.json?v=${timestamp}`, {
+                cache: "no-cache",
+                headers: {
+                  "Cache-Control": "no-cache, no-store, must-revalidate",
+                  Pragma: "no-cache",
+                  Expires: "0",
+                },
+              })
+              if (response.ok) {
+                const manifest = await response.json()
+                const serverVersion = manifest.short_name || manifest.name
+
+                if (serverVersion && serverVersion !== `Budget ${currentVersion}`) {
+                  setUpdateAvailable(true)
+                  setUpdateStatus({
+                    type: "info",
+                    message: `New version available: ${serverVersion}`,
+                  })
+                } else {
+                  setUpdateStatus({
+                    type: "success",
+                    message: "You have the latest version!",
+                  })
+                }
+              } else {
+                setUpdateStatus({
+                  type: "success",
+                  message: "You have the latest version!",
+                })
+              }
+            } catch (fetchError) {
+              console.error("Error checking version:", fetchError)
+              setUpdateStatus({
+                type: "success",
+                message: "You have the latest version!",
+              })
+            }
           }
         } else {
           setUpdateStatus({
-            type: "success",
-            message: "You have the latest version!",
+            type: "warning",
+            message: "Service worker not found. Please refresh the page.",
           })
         }
       }
     } catch (error) {
+      console.error("Error checking for updates:", error)
       setUpdateStatus({
         type: "error",
         message: "Failed to check for updates. Please try again.",
@@ -194,8 +275,14 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
 
           navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange)
         } else {
-          // Force cache update
-          await caches.delete("budget-tracker-v35")
+          // Force cache update by clearing all caches
+          const cacheNames = await caches.keys()
+          await Promise.all(
+            cacheNames.map((cacheName) => {
+              console.log("Deleting cache:", cacheName)
+              return caches.delete(cacheName)
+            }),
+          )
 
           // Re-register service worker
           await navigator.serviceWorker.register("/sw.js")
@@ -215,13 +302,24 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
         setUpdateAvailable(false)
       } else {
         // Fallback for browsers without service worker support
+        // Clear browser cache and reload
+        if ("caches" in window) {
+          const cacheNames = await caches.keys()
+          await Promise.all(cacheNames.map((name) => caches.delete(name)))
+        }
+
         setUpdateProgress(100)
         setUpdateStatus({
           type: "info",
-          message: "Please refresh your browser to get the latest version.",
+          message: "Refreshing to get the latest version...",
         })
+
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
       }
     } catch (error) {
+      console.error("Error downloading update:", error)
       setUpdateStatus({
         type: "error",
         message: "Failed to download update. Please try again.",
@@ -282,7 +380,9 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
             <div>
               <h4 className="font-medium text-gray-800">Current Version</h4>
               <p className="text-sm text-gray-600">Daily Budget {currentVersion}</p>
-              <p className="text-xs text-gray-500">Last updated: {new Date().toLocaleDateString()}</p>
+              <p className="text-xs text-gray-500">
+                Last checked: {lastUpdateCheck ? lastUpdateCheck.toLocaleTimeString() : "Never"}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {updateAvailable ? (
@@ -328,7 +428,7 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
             <Button
               onClick={downloadLatestVersion}
               className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-              disabled={isDownloading || !isOnline || (!updateAvailable && !isCheckingUpdates)}
+              disabled={isDownloading || !isOnline}
             >
               {isDownloading ? (
                 <>
@@ -338,7 +438,7 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
               ) : (
                 <>
                   <Download className="w-4 h-4 mr-2" />
-                  Download Latest App
+                  {updateAvailable ? "Download Update" : "Force Refresh App"}
                 </>
               )}
             </Button>
@@ -371,19 +471,19 @@ export function AppUpdateManager({ onUpdateComplete }: AppUpdateManagerProps) {
           <h4 className="font-medium text-gray-800 mb-2">Recent Updates</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">v35 - Enhanced PWA Updates</span>
+              <span className="text-gray-600">v38 - Fixed Notifications & Updates</span>
               <span className="text-xs text-green-600 font-medium">Current</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">v34 - Fixed SSR Issues</span>
+              <span className="text-gray-600">v37 - Enhanced PWA Updates</span>
               <span className="text-xs text-gray-500">Previous</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">v33 - Enhanced Notifications</span>
+              <span className="text-gray-600">v36 - Fixed SSR Issues</span>
               <span className="text-xs text-gray-500">Previous</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">v32 - Saturday Default Bills</span>
+              <span className="text-gray-600">v35 - Enhanced Notifications</span>
               <span className="text-xs text-gray-500">Previous</span>
             </div>
           </div>

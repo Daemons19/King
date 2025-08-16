@@ -1,7 +1,7 @@
 {
-  "name": "Daily Budget Tracker v37",
-  "short_name": "Budget v37",
-  "description": "Track your daily income, expenses, and bills with real-time notifications",
+  "name": "Daily Budget Tracker v38",
+  "short_name": "Budget v38",
+  "description": "Track your daily income, expenses, and bills with working notifications",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#6366f1",
