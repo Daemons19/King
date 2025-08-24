@@ -1,8 +1,8 @@
-const CACHE_NAME = "budget-tracker-v82"
-const APP_VERSION = "v82"
+const CACHE_NAME = "budget-tracker-v83"
+const APP_VERSION = "v83"
 const urlsToCache = ["/", "/offline.html", "/manifest.json", "/placeholder-logo.png", "/favicon.ico"]
 
-// Install event - cache resources
+// Install event - cache resources and skip waiting
 self.addEventListener("install", (event) => {
   console.log(`Service Worker ${APP_VERSION} installing...`)
 
@@ -14,12 +14,13 @@ self.addEventListener("install", (event) => {
         return cache.addAll(urlsToCache)
       })
       .then(() => {
+        console.log("Service Worker installed, skipping waiting...")
         return self.skipWaiting()
       }),
   )
 })
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and claim clients immediately
 self.addEventListener("activate", (event) => {
   console.log(`Service Worker ${APP_VERSION} activating...`)
 
@@ -37,9 +38,11 @@ self.addEventListener("activate", (event) => {
         )
       })
       .then(() => {
+        console.log("Service Worker claiming clients...")
         return self.clients.claim()
       })
       .then(() => {
+        console.log("Service Worker activated and ready for notifications")
         return self.clients.matchAll().then((clients) => {
           clients.forEach((client) => {
             client.postMessage({
@@ -153,14 +156,23 @@ self.addEventListener("notificationclose", (event) => {
   }
 })
 
-// Enhanced message handler for PWA communication
+// Enhanced message handler for PWA communication with immediate activation support
 self.addEventListener("message", (event) => {
   const { type, data } = event.data || {}
 
   switch (type) {
     case "SKIP_WAITING":
-      console.log("PWA User confirmed update, activating new version")
-      self.skipWaiting()
+      console.log("PWA User confirmed update, activating new version immediately")
+      self
+        .skipWaiting()
+        .then(() => {
+          console.log("Service Worker skip waiting completed")
+          // Immediately claim clients after skip waiting
+          return self.clients.claim()
+        })
+        .then(() => {
+          console.log("Service Worker claimed clients after skip waiting")
+        })
       break
 
     case "CHECK_FOR_UPDATES":
@@ -235,6 +247,22 @@ self.addEventListener("message", (event) => {
     case "SCHEDULE_NOTIFICATION":
       // Handle scheduled notifications for PWA
       console.log("PWA Scheduled notification request received:", data)
+      break
+
+    case "FORCE_ACTIVATE":
+      // Handle force activation requests
+      console.log("Force activation requested")
+      self.clients.claim().then(() => {
+        console.log("Service Worker force claimed clients")
+        self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: "SERVICE_WORKER_ACTIVATED",
+              version: APP_VERSION,
+            })
+          })
+        })
+      })
       break
   }
 })
@@ -334,4 +362,11 @@ self.addEventListener("periodicsync", (event) => {
   }
 })
 
+// Log when service worker is fully loaded and ready
 console.log(`Service Worker ${APP_VERSION} loaded successfully with PWA notification support`)
+
+// Immediately claim clients if this is a new service worker
+if (self.registration && self.registration.active === null) {
+  console.log("New service worker detected, claiming clients immediately")
+  self.clients.claim()
+}

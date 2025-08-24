@@ -18,6 +18,7 @@ import {
   Target,
   Wifi,
   Download,
+  RefreshCw,
 } from "lucide-react"
 
 interface NotificationManagerProps {
@@ -46,6 +47,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   const [permission, setPermission] = useState<NotificationPermission>("default")
   const [isSupported, setIsSupported] = useState(false)
   const [serviceWorkerReady, setServiceWorkerReady] = useState(false)
+  const [serviceWorkerActive, setServiceWorkerActive] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const [lastNotificationSent, setLastNotificationSent] = useState<string | null>(null)
   const [notificationCount, setNotificationCount] = useState(0)
@@ -53,6 +55,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   const [isOnline, setIsOnline] = useState(true)
   const [isPWA, setIsPWA] = useState(false)
   const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
+  const [isActivating, setIsActivating] = useState(false)
   const [settings, setSettings] = useState({
     billReminders: true,
     goalAlerts: true,
@@ -109,7 +112,88 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     }
   }, [])
 
-  // Initialize notification system with proper service worker
+  // Wait for service worker to become active
+  const waitForActiveServiceWorker = async (registration: ServiceWorkerRegistration): Promise<ServiceWorker> => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Service worker activation timeout"))
+      }, 10000) // 10 second timeout
+
+      const checkActive = () => {
+        if (registration.active) {
+          clearTimeout(timeout)
+          addDebug("Service worker is now active")
+          resolve(registration.active)
+          return
+        }
+
+        if (registration.installing) {
+          addDebug("Service worker is installing...")
+          registration.installing.addEventListener("statechange", () => {
+            checkActive()
+          })
+          return
+        }
+
+        if (registration.waiting) {
+          addDebug("Service worker is waiting, activating...")
+          registration.waiting.postMessage({ type: "SKIP_WAITING" })
+          registration.waiting.addEventListener("statechange", () => {
+            checkActive()
+          })
+          return
+        }
+
+        // If no active, installing, or waiting, something is wrong
+        clearTimeout(timeout)
+        reject(new Error("No service worker found in any state"))
+      }
+
+      checkActive()
+    })
+  }
+
+  // Force service worker activation
+  const activateServiceWorker = async () => {
+    if (!registration) {
+      throw new Error("No service worker registration available")
+    }
+
+    setIsActivating(true)
+    addDebug("Forcing service worker activation...")
+
+    try {
+      // If there's a waiting service worker, activate it
+      if (registration.waiting) {
+        addDebug("Activating waiting service worker...")
+        registration.waiting.postMessage({ type: "SKIP_WAITING" })
+
+        // Wait for it to become active
+        await new Promise((resolve) => {
+          const handleStateChange = () => {
+            if (registration.active) {
+              navigator.serviceWorker.removeEventListener("controllerchange", handleStateChange)
+              resolve(true)
+            }
+          }
+          navigator.serviceWorker.addEventListener("controllerchange", handleStateChange)
+        })
+      }
+
+      // Wait for active service worker
+      const activeWorker = await waitForActiveServiceWorker(registration)
+      setServiceWorkerActive(true)
+      addDebug("Service worker successfully activated")
+      return activeWorker
+    } catch (error) {
+      addDebug(`Service worker activation failed: ${error.message}`)
+      throw error
+    } finally {
+      setIsActivating(false)
+    }
+  }
+
+  // Initialize notification system with proper service worker activation
   useEffect(() => {
     const initNotifications = async () => {
       addDebug("Initializing notification system...")
@@ -131,28 +215,52 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       setPermission(currentPermission)
       addDebug(`Current permission: ${currentPermission}`)
 
-      // Register service worker - CRITICAL for PWA notifications
+      // Get service worker registration
       try {
-        addDebug("Registering service worker...")
+        addDebug("Getting service worker registration...")
 
-        // Check if service worker is already registered
-        const existingRegistration = await navigator.serviceWorker.getRegistration()
+        // First try to get existing registration
+        let swRegistration = await navigator.serviceWorker.getRegistration()
 
-        if (existingRegistration) {
-          addDebug("Using existing service worker registration")
-          setRegistration(existingRegistration)
-          setServiceWorkerReady(true)
-        } else {
-          addDebug("No existing service worker found - this might be the issue")
-          setLastError("Service Worker not found. Please refresh the app or reinstall the PWA.")
-          return
+        if (!swRegistration) {
+          addDebug("No existing registration, waiting for ready...")
+          // If no registration, wait for ready (it should be registered by the app)
+          swRegistration = await navigator.serviceWorker.ready
         }
 
-        // Wait for service worker to be ready
-        const readyRegistration = await navigator.serviceWorker.ready
-        setRegistration(readyRegistration)
-        setServiceWorkerReady(true)
-        addDebug("Service worker is ready for notifications")
+        if (!swRegistration) {
+          throw new Error("Service worker registration not found")
+        }
+
+        setRegistration(swRegistration)
+        addDebug("Service worker registration obtained")
+
+        // Check if service worker is active
+        if (swRegistration.active) {
+          addDebug("Service worker is already active")
+          setServiceWorkerActive(true)
+          setServiceWorkerReady(true)
+        } else {
+          addDebug("Service worker is not active, will need activation")
+          setServiceWorkerActive(false)
+          setServiceWorkerReady(false)
+        }
+
+        // Listen for service worker state changes
+        const handleStateChange = () => {
+          if (swRegistration.active) {
+            addDebug("Service worker became active")
+            setServiceWorkerActive(true)
+            setServiceWorkerReady(true)
+          }
+        }
+
+        if (swRegistration.installing) {
+          swRegistration.installing.addEventListener("statechange", handleStateChange)
+        }
+        if (swRegistration.waiting) {
+          swRegistration.waiting.addEventListener("statechange", handleStateChange)
+        }
 
         // Listen for service worker messages
         navigator.serviceWorker.addEventListener("message", (event) => {
@@ -163,6 +271,8 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             addDebug(`SW Success: ${event.data.title}`)
           }
         })
+
+        addDebug("Service worker initialization complete")
       } catch (error) {
         console.error("Service Worker initialization failed:", error)
         setLastError(`Service Worker failed: ${error.message}`)
@@ -203,15 +313,21 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       return
     }
 
-    if (!serviceWorkerReady) {
-      setLastError("Service Worker not ready. Please refresh the app.")
-      addDebug("Attempted to request permission without service worker")
+    if (!registration) {
+      setLastError("Service Worker registration not available. Please refresh the app.")
+      addDebug("Attempted to request permission without registration")
       return
     }
 
     try {
       setLastError(null)
       addDebug("Requesting notification permission...")
+
+      // Ensure service worker is active before requesting permission
+      if (!serviceWorkerActive) {
+        addDebug("Service worker not active, activating first...")
+        await activateServiceWorker()
+      }
 
       // Request permission with user gesture
       const result = await Notification.requestPermission()
@@ -224,15 +340,15 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
 
         // Send welcome notification using Service Worker (REQUIRED for PWA)
         await sendServiceWorkerNotification({
-          title: "🎉 PWA Notifications Enabled!",
-          body: "Perfect! Your Poco F6 will now receive notifications even when the app is closed. This proves it's working!",
+          title: "🎉 PWA Notifications Active!",
+          body: "Perfect! Your Poco F6 will now receive notifications even when the app is closed. This notification proves everything is working!",
           tag: "welcome",
           requireInteraction: true,
           vibrate: [200, 100, 200, 100, 200],
           data: { type: "welcome", timestamp: Date.now() },
         })
 
-        setLastNotificationSent("Welcome notification sent via Service Worker!")
+        setLastNotificationSent("Welcome notification sent successfully!")
         addDebug("Welcome notification sent successfully")
       } else if (result === "denied") {
         setLastError("Notifications were denied. Please enable them in your device settings.")
@@ -265,14 +381,26 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       return false
     }
 
-    if (!serviceWorkerReady || !registration) {
-      setLastError("Service Worker not ready. Please refresh the app.")
-      addDebug("Attempted to send notification without service worker")
+    if (!registration) {
+      setLastError("Service Worker registration not available. Please refresh the app.")
+      addDebug("Attempted to send notification without registration")
       return false
     }
 
     try {
-      addDebug(`Sending SW notification: ${options.title}`)
+      addDebug(`Preparing to send notification: ${options.title}`)
+
+      // Ensure service worker is active
+      if (!registration.active) {
+        addDebug("Service worker not active, activating...")
+        await activateServiceWorker()
+      }
+
+      if (!registration.active) {
+        throw new Error("Service worker could not be activated")
+      }
+
+      addDebug("Service worker is active, sending notification...")
 
       const notificationOptions = {
         body: options.body,
@@ -381,9 +509,20 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     })
   }
 
+  const forceActivateServiceWorker = async () => {
+    try {
+      setLastError(null)
+      await activateServiceWorker()
+      addDebug("Service worker force activation completed")
+    } catch (error) {
+      setLastError(`Failed to activate service worker: ${error.message}`)
+      addDebug(`Force activation failed: ${error.message}`)
+    }
+  }
+
   // Auto-send notifications based on data changes
   useEffect(() => {
-    if (!notificationsEnabled || permission !== "granted" || !serviceWorkerReady) return
+    if (!notificationsEnabled || permission !== "granted" || !serviceWorkerActive) return
 
     const checkAndSendNotifications = () => {
       const now = new Date()
@@ -413,7 +552,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     // Check every minute
     const interval = setInterval(checkAndSendNotifications, 60000)
     return () => clearInterval(interval)
-  }, [notificationsEnabled, permission, serviceWorkerReady, settings, weeklyPayables, dailyIncome, currency])
+  }, [notificationsEnabled, permission, serviceWorkerActive, settings, weeklyPayables, dailyIncome, currency])
 
   // Calculate current stats
   const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
@@ -477,14 +616,28 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             {lastError.includes("Service Worker") && (
               <div className="text-xs text-red-600 bg-white p-2 rounded mb-3">
                 <p className="font-medium">Try these fixes:</p>
-                <p>1. Close and reopen the PWA app</p>
-                <p>2. Restart your phone</p>
-                <p>3. Uninstall and reinstall the PWA</p>
+                <p>1. Use "Activate Service Worker" button below</p>
+                <p>2. Close and reopen the PWA app</p>
+                <p>3. Restart your phone</p>
+                <p>4. Uninstall and reinstall the PWA</p>
               </div>
             )}
-            <Button onClick={() => setLastError(null)} variant="outline" size="sm" className="bg-white hover:bg-red-50">
-              Dismiss
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setLastError(null)}
+                variant="outline"
+                size="sm"
+                className="bg-white hover:bg-red-50"
+              >
+                Dismiss
+              </Button>
+              {lastError.includes("Service Worker") && (
+                <Button onClick={forceActivateServiceWorker} variant="outline" size="sm" disabled={isActivating}>
+                  <RefreshCw className={`w-3 h-3 mr-1 ${isActivating ? "animate-spin" : ""}`} />
+                  {isActivating ? "Activating..." : "Fix SW"}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -525,8 +678,9 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             PWA Push Notifications
             <div className="flex gap-2 ml-auto">
               {serviceWorkerReady && <Badge className="bg-green-100 text-green-800 text-xs">SW Ready</Badge>}
+              {serviceWorkerActive && <Badge className="bg-blue-100 text-blue-800 text-xs">SW Active</Badge>}
               {notificationCount > 0 && (
-                <Badge className="bg-blue-100 text-blue-800 text-xs">{notificationCount} sent</Badge>
+                <Badge className="bg-purple-100 text-purple-800 text-xs">{notificationCount} sent</Badge>
               )}
             </div>
           </CardTitle>
@@ -536,18 +690,32 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           {/* Service Worker Status */}
           <div
             className={`p-3 rounded-lg border ${
-              serviceWorkerReady ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"
+              serviceWorkerActive
+                ? "bg-green-50 border-green-200"
+                : serviceWorkerReady
+                  ? "bg-yellow-50 border-yellow-200"
+                  : "bg-red-50 border-red-200"
             }`}
           >
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium">
-                {serviceWorkerReady ? "✅ Service Worker Ready" : "⚠️ Service Worker Not Ready"}
+                {serviceWorkerActive
+                  ? "✅ Service Worker Active"
+                  : serviceWorkerReady
+                    ? "⚠️ Service Worker Ready (Not Active)"
+                    : "❌ Service Worker Not Ready"}
               </span>
+              {!serviceWorkerActive && registration && (
+                <Button onClick={forceActivateServiceWorker} size="sm" variant="outline" disabled={isActivating}>
+                  <RefreshCw className={`w-3 h-3 mr-1 ${isActivating ? "animate-spin" : ""}`} />
+                  {isActivating ? "Activating..." : "Activate"}
+                </Button>
+              )}
             </div>
             <p className="text-xs text-gray-600">
-              {serviceWorkerReady
+              {serviceWorkerActive
                 ? "PWA notifications are ready to work"
-                : "Service Worker is required for PWA notifications"}
+                : "Service Worker must be active for PWA notifications"}
             </p>
           </div>
 
@@ -569,7 +737,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
                     ? "❌ Notifications Blocked"
                     : "⚠️ Notifications Not Set Up"}
               </span>
-              {permission === "granted" && serviceWorkerReady && (
+              {permission === "granted" && serviceWorkerActive && (
                 <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
               )}
             </div>
@@ -583,13 +751,13 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
                 <Button
                   onClick={requestPermission}
                   className="w-full bg-blue-600 hover:bg-blue-700"
-                  disabled={!serviceWorkerReady}
+                  disabled={!registration}
                 >
                   <Bell className="w-4 h-4 mr-2" />
                   Enable PWA Push Notifications
                 </Button>
-                {!serviceWorkerReady && (
-                  <p className="text-xs text-orange-600">Please wait for Service Worker to be ready...</p>
+                {!registration && (
+                  <p className="text-xs text-orange-600">Please wait for Service Worker registration...</p>
                 )}
               </div>
             )}
@@ -623,7 +791,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           </div>
 
           {/* Test Notifications */}
-          {permission === "granted" && serviceWorkerReady && (
+          {permission === "granted" && serviceWorkerActive && (
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-2">
                 <Button
@@ -653,11 +821,27 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
               </div>
             </div>
           )}
+
+          {/* Service Worker Not Active Warning */}
+          {permission === "granted" && !serviceWorkerActive && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800 mb-2">
+                <strong>⚠️ Service Worker Not Active</strong>
+              </p>
+              <p className="text-xs text-yellow-700 mb-3">
+                The service worker needs to be active to send notifications in PWA mode.
+              </p>
+              <Button onClick={forceActivateServiceWorker} size="sm" disabled={isActivating}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${isActivating ? "animate-spin" : ""}`} />
+                {isActivating ? "Activating Service Worker..." : "Activate Service Worker"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Notification Types Settings */}
-      {permission === "granted" && notificationsEnabled && serviceWorkerReady && (
+      {permission === "granted" && notificationsEnabled && serviceWorkerActive && (
         <Card className="bg-white/90 border-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
@@ -811,25 +995,34 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
         <CardContent>
           <div className="text-xs text-purple-700 space-y-3">
             <div className="bg-white p-3 rounded border">
-              <p className="font-medium mb-2">🔧 If notifications don't work:</p>
+              <p className="font-medium mb-2">🔧 If Service Worker won't activate:</p>
+              <p>1. Use the "Activate Service Worker" button above</p>
+              <p>2. Close the PWA completely and reopen it</p>
+              <p>3. Restart your Poco F6</p>
+              <p>4. Clear PWA data: Long press app → App info → Storage → Clear data</p>
+            </div>
+
+            <div className="bg-white p-3 rounded border">
+              <p className="font-medium mb-2">🔧 If notifications still don't work:</p>
               <p>1. Android Settings → Apps → Budget Tracker → Notifications → Enable all</p>
               <p>2. Make sure "Show on lock screen" is ON</p>
               <p>3. Battery optimization: Settings → Battery → App battery usage → Budget Tracker → No restrictions</p>
             </div>
 
             <div className="bg-white p-3 rounded border">
-              <p className="font-medium mb-2">🔄 Reset PWA:</p>
-              <p>1. Long press the app icon → App info → Storage → Clear data</p>
-              <p>2. Or uninstall PWA and reinstall from Chrome</p>
-              <p>3. Make sure to allow notifications when prompted</p>
+              <p className="font-medium mb-2">🔄 Nuclear option (Reset everything):</p>
+              <p>1. Uninstall the PWA completely</p>
+              <p>2. Open the app in Chrome browser</p>
+              <p>3. Allow notifications when prompted</p>
+              <p>4. Install as PWA again (Add to Home Screen)</p>
             </div>
 
             <div className="bg-white p-3 rounded border">
               <p className="font-medium mb-2">📲 Testing:</p>
-              <p>• Use "Send PWA Test Notification" button above</p>
+              <p>• Make sure "SW Active" badge shows above</p>
+              <p>• Use "Send PWA Test Notification" button</p>
               <p>• Check notification panel by swiping down</p>
               <p>• Try "URGENT Alert" for maximum vibration</p>
-              <p>• Notifications should work even when app is closed</p>
             </div>
           </div>
         </CardContent>
@@ -858,7 +1051,13 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
               <strong>Permission:</strong> {permission}
             </p>
             <p>
-              <strong>Service Worker:</strong> {serviceWorkerReady ? "Ready" : "Not Ready"}
+              <strong>Service Worker Ready:</strong> {serviceWorkerReady ? "Yes" : "No"}
+            </p>
+            <p>
+              <strong>Service Worker Active:</strong> {serviceWorkerActive ? "Yes" : "No"}
+            </p>
+            <p>
+              <strong>Registration:</strong> {registration ? "Available" : "Not Available"}
             </p>
             <p>
               <strong>User Agent:</strong> {navigator.userAgent.includes("wv") ? "WebView (PWA)" : "Browser"}
