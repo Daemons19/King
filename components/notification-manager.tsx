@@ -1,362 +1,688 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Bell, AlertTriangle, CheckCircle, Clock, TrendingUp, Target, Calendar, DollarSign, Zap } from "lucide-react"
-
-// Safe number formatting function
-const safeToFixed = (value: any, decimals = 2): string => {
-  const num = Number(value)
-  return isNaN(num) ? "0.00" : num.toFixed(decimals)
-}
-
-// Safe number conversion
-const safeNumber = (value: any): number => {
-  const num = Number(value)
-  return isNaN(num) ? 0 : num
-}
-
-// Helper function to get current day
-const getCurrentDay = () => {
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-  return days[new Date().getDay()]
-}
-
-// Helper function to get current time in Manila
-const getCurrentManilaTime = () => {
-  return new Date().toLocaleString("en-US", {
-    timeZone: "Asia/Manila",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  })
-}
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Bell, BellOff, AlertTriangle, CheckCircle, Smartphone, Send, Settings, Zap, Target } from "lucide-react"
 
 interface NotificationManagerProps {
-  weeklyPayables: any[]
-  dailyIncome: any[]
+  weeklyPayables: Array<{
+    id: number
+    name: string
+    amount: number
+    dueDay: string
+    status: string
+    week: string
+  }>
+  dailyIncome: Array<{
+    day: string
+    amount: number
+    goal: number
+    date: string
+    isToday: boolean
+    isPast: boolean
+    isWorkDay: boolean
+  }>
   currency: string
 }
 
 export default function NotificationManager({ weeklyPayables, dailyIncome, currency }: NotificationManagerProps) {
-  const [currentTime, setCurrentTime] = useState("")
-  const [notifications, setNotifications] = useState<any[]>([])
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [permission, setPermission] = useState<NotificationPermission>("default")
+  const [isSupported, setIsSupported] = useState(false)
+  const [serviceWorkerReady, setServiceWorkerReady] = useState(false)
+  const [lastError, setLastError] = useState<string | null>(null)
+  const [lastNotificationSent, setLastNotificationSent] = useState<string | null>(null)
+  const [notificationCount, setNotificationCount] = useState(0)
+  const [settings, setSettings] = useState({
+    billReminders: true,
+    goalAlerts: true,
+    dailyReminders: true,
+    weeklyReports: true,
+    morningReminders: true,
+    eveningCheckins: true,
+  })
 
-  // Update time every minute
+  // Initialize notification system
   useEffect(() => {
-    const updateTime = () => {
-      setCurrentTime(getCurrentManilaTime())
+    const initNotifications = async () => {
+      // Check if notifications are supported
+      const supported = "Notification" in window && "serviceWorker" in navigator
+      setIsSupported(supported)
+
+      if (!supported) {
+        setLastError("Notifications not supported on this device/browser")
+        return
+      }
+
+      // Get current permission
+      setPermission(Notification.permission)
+
+      // Register service worker
+      try {
+        const registration = await navigator.serviceWorker.register("/sw.js")
+        console.log("Service Worker registered:", registration)
+        setServiceWorkerReady(true)
+
+        // Listen for service worker messages
+        navigator.serviceWorker.addEventListener("message", (event) => {
+          if (event.data?.type === "NOTIFICATION_ERROR") {
+            setLastError(event.data.error)
+          }
+        })
+      } catch (error) {
+        console.error("Service Worker registration failed:", error)
+        setLastError("Service Worker registration failed")
+      }
+
+      // Load saved settings
+      const savedSettings = localStorage.getItem("notificationSettings")
+      if (savedSettings) {
+        try {
+          const parsed = JSON.parse(savedSettings)
+          setSettings(parsed)
+          setNotificationsEnabled(parsed.enabled && Notification.permission === "granted")
+        } catch (error) {
+          console.error("Error loading notification settings:", error)
+        }
+      }
     }
 
-    updateTime()
-    const timer = setInterval(updateTime, 60000)
-    return () => clearInterval(timer)
+    initNotifications()
   }, [])
 
-  // Generate notifications based on current data
+  // Save settings to localStorage
   useEffect(() => {
-    const newNotifications = []
-    const currentDay = getCurrentDay()
+    const settingsToSave = {
+      ...settings,
+      enabled: notificationsEnabled,
+    }
+    localStorage.setItem("notificationSettings", JSON.stringify(settingsToSave))
+  }, [settings, notificationsEnabled])
 
-    // Safe data access with defaults
-    const safeWeeklyPayables = Array.isArray(weeklyPayables) ? weeklyPayables : []
-    const safeDailyIncome = Array.isArray(dailyIncome) ? dailyIncome : []
+  // Auto-send notifications based on data changes
+  useEffect(() => {
+    if (!notificationsEnabled || permission !== "granted") return
 
-    // Today's income data
-    const todayData = safeDailyIncome.find((day) => day && day.day === currentDay)
-    const todayIncome = safeNumber(todayData?.amount)
-    const todayGoal = safeNumber(todayData?.goal)
-    const isWorkDay = Boolean(todayData?.isWorkDay)
+    const sendAutoNotifications = async () => {
+      const now = new Date()
+      const currentHour = now.getHours()
+      const currentDay = now.toLocaleDateString("en-US", { weekday: "short" })
 
-    // 1. Today's Goal Progress Notification
-    if (isWorkDay && todayGoal > 0) {
-      const progress = (todayIncome / todayGoal) * 100
+      // Morning reminders (9 AM)
+      if (currentHour === 9 && settings.morningReminders) {
+        const todayData = dailyIncome.find((d) => d.day === currentDay)
+        if (todayData?.isWorkDay && todayData.goal > 0) {
+          await sendNotification({
+            title: "🌅 Good Morning!",
+            body: `Today's goal: ${currency}${todayData.goal.toLocaleString()}. Let's make it happen!`,
+            tag: "morning-reminder",
+            data: { type: "goal", day: currentDay },
+          })
+        }
+      }
 
-      if (progress >= 100) {
-        newNotifications.push({
-          id: "goal-achieved",
-          type: "success",
-          icon: CheckCircle,
-          title: "🎉 Daily Goal Achieved!",
-          message: `You've earned ${currency}${todayIncome.toLocaleString()} today (${safeToFixed(progress, 1)}% of goal)`,
-          priority: "high",
-          timestamp: new Date().toISOString(),
-        })
-      } else if (progress >= 80) {
-        newNotifications.push({
-          id: "goal-almost",
-          type: "info",
-          icon: Target,
-          title: "🔥 Almost There!",
-          message: `${safeToFixed(progress, 1)}% of daily goal completed. ${currency}${(todayGoal - todayIncome).toLocaleString()} to go!`,
-          priority: "medium",
-          timestamp: new Date().toISOString(),
-        })
-      } else if (progress < 50) {
-        const currentHour = new Date().getHours()
-        if (currentHour >= 12) {
-          // After noon
-          newNotifications.push({
-            id: "goal-behind",
-            type: "warning",
-            icon: AlertTriangle,
-            title: "⚡ Behind on Daily Goal",
-            message: `Only ${safeToFixed(progress, 1)}% completed. Need ${currency}${(todayGoal - todayIncome).toLocaleString()} more today.`,
-            priority: "high",
-            timestamp: new Date().toISOString(),
+      // Evening check-ins (6 PM)
+      if (currentHour === 18 && settings.eveningCheckins) {
+        const todayData = dailyIncome.find((d) => d.day === currentDay)
+        if (todayData?.isWorkDay && todayData.goal > 0) {
+          const progress = (todayData.amount / todayData.goal) * 100
+          if (progress < 80) {
+            await sendNotification({
+              title: "⏰ Evening Check-in",
+              body: `You're at ${progress.toFixed(0)}% of today's goal. ${currency}${(todayData.goal - todayData.amount).toLocaleString()} to go!`,
+              tag: "evening-checkin",
+              data: { type: "goal", progress },
+            })
+          }
+        }
+      }
+
+      // Bill reminders
+      if (settings.billReminders) {
+        const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
+        const billsDueToday = pendingBills.filter((p) => p.dueDay === currentDay)
+
+        if (billsDueToday.length > 0) {
+          const totalAmount = billsDueToday.reduce((sum, bill) => sum + bill.amount, 0)
+          await sendNotification({
+            title: "💳 Bills Due Today!",
+            body: `${billsDueToday.length} bill(s) due today: ${currency}${totalAmount.toLocaleString()}`,
+            tag: "bills-due-today",
+            requireInteraction: true,
+            data: { type: "bills", bills: billsDueToday },
           })
         }
       }
     }
 
-    // 2. Pending Bills Notifications
-    const pendingBills = safeWeeklyPayables.filter((bill) => bill && bill.status === "pending")
-    const totalPendingAmount = pendingBills.reduce((sum, bill) => sum + safeNumber(bill?.amount), 0)
+    // Check every minute for notification triggers
+    const interval = setInterval(sendAutoNotifications, 60000)
+    return () => clearInterval(interval)
+  }, [notificationsEnabled, permission, settings, weeklyPayables, dailyIncome, currency])
 
-    if (pendingBills.length > 0) {
-      // Bills due today
-      const billsDueToday = pendingBills.filter((bill) => bill && bill.dueDay === currentDay)
-
-      if (billsDueToday.length > 0) {
-        const todayBillsAmount = billsDueToday.reduce((sum, bill) => sum + safeNumber(bill?.amount), 0)
-        newNotifications.push({
-          id: "bills-due-today",
-          type: "urgent",
-          icon: AlertTriangle,
-          title: "🚨 Bills Due Today!",
-          message: `${billsDueToday.length} bill(s) due today totaling ${currency}${todayBillsAmount.toLocaleString()}`,
-          priority: "urgent",
-          timestamp: new Date().toISOString(),
-          bills: billsDueToday,
-        })
-      }
-
-      // All pending bills summary
-      if (totalPendingAmount > 0) {
-        newNotifications.push({
-          id: "pending-bills",
-          type: "info",
-          icon: Clock,
-          title: "📋 Pending Bills",
-          message: `${pendingBills.length} pending bill(s) totaling ${currency}${totalPendingAmount.toLocaleString()}`,
-          priority: "medium",
-          timestamp: new Date().toISOString(),
-        })
-      }
+  const requestPermission = async () => {
+    if (!isSupported) {
+      setLastError("Notifications are not supported on this device/browser")
+      return
     }
 
-    // 3. Weekly Progress Notification
-    const workDays = safeDailyIncome.filter((day) => day && day.isWorkDay && safeNumber(day.goal) > 0)
-    const weeklyEarned = workDays.reduce((sum, day) => sum + safeNumber(day?.amount), 0)
-    const weeklyGoal = workDays.reduce((sum, day) => sum + safeNumber(day?.goal), 0)
-    const weeklyProgress = (weeklyEarned / weeklyGoal) * 100 // Declare weeklyProgress here
+    try {
+      setLastError(null)
 
-    if (weeklyGoal > 0) {
-      if (weeklyProgress >= 100) {
-        newNotifications.push({
-          id: "weekly-goal-achieved",
-          type: "success",
-          icon: TrendingUp,
-          title: "🏆 Weekly Goal Achieved!",
-          message: `Amazing! You've earned ${currency}${weeklyEarned.toLocaleString()} this week (${safeToFixed(weeklyProgress, 1)}%)`,
-          priority: "high",
-          timestamp: new Date().toISOString(),
+      // Request permission
+      const result = await Notification.requestPermission()
+      setPermission(result)
+
+      if (result === "granted") {
+        setNotificationsEnabled(true)
+
+        // Send welcome notification
+        await sendNotification({
+          title: "🎉 Notifications Enabled!",
+          body: "You'll now receive reminders for bills and goals. Tap to open the app.",
+          tag: "welcome",
+          requireInteraction: true,
+          data: { type: "welcome" },
         })
-      } else if (weeklyProgress >= 75) {
-        newNotifications.push({
-          id: "weekly-progress-good",
-          type: "info",
-          icon: TrendingUp,
-          title: "📈 Great Weekly Progress",
-          message: `${safeToFixed(weeklyProgress, 1)}% of weekly goal completed. Keep it up!`,
-          priority: "low",
-          timestamp: new Date().toISOString(),
-        })
+
+        setLastNotificationSent("Welcome notification sent successfully!")
+      } else if (result === "denied") {
+        setLastError("Notifications were denied. Please enable them in your browser settings.")
+      } else {
+        setLastError("Notification permission was not granted")
       }
-    }
-
-    // 4. Rest Day Notification
-    if (!isWorkDay) {
-      newNotifications.push({
-        id: "rest-day",
-        type: "info",
-        icon: Calendar,
-        title: "😌 Rest Day",
-        message: `Today is marked as a rest day. Take time to recharge!`,
-        priority: "low",
-        timestamp: new Date().toISOString(),
-      })
-    }
-
-    // 5. Savings Potential Notification
-    const remainingWorkDays = workDays.filter((day) => day && !day.isPast && !day.isToday)
-    const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + safeNumber(day?.goal), 0)
-
-    if (potentialRemainingEarnings > 0 && weeklyProgress >= 50) {
-      const projectedWeeklyTotal = weeklyEarned + potentialRemainingEarnings
-      const projectedSavings = projectedWeeklyTotal - totalPendingAmount
-
-      if (projectedSavings > 0) {
-        newNotifications.push({
-          id: "savings-potential",
-          type: "success",
-          icon: DollarSign,
-          title: "💰 Savings Potential",
-          message: `If you meet remaining goals, you could save ${currency}${projectedSavings.toLocaleString()} this week!`,
-          priority: "medium",
-          timestamp: new Date().toISOString(),
-        })
-      }
-    }
-
-    // Sort notifications by priority and timestamp
-    const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 }
-    newNotifications.sort((a, b) => {
-      const priorityDiff =
-        (priorityOrder[b.priority as keyof typeof priorityOrder] || 0) -
-        (priorityOrder[a.priority as keyof typeof priorityOrder] || 0)
-      if (priorityDiff !== 0) return priorityDiff
-      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    })
-
-    setNotifications(newNotifications)
-  }, [weeklyPayables, dailyIncome, currency])
-
-  const getNotificationColor = (type: string) => {
-    switch (type) {
-      case "urgent":
-        return "border-red-500 bg-red-50"
-      case "warning":
-        return "border-orange-500 bg-orange-50"
-      case "success":
-        return "border-green-500 bg-green-50"
-      case "info":
-      default:
-        return "border-blue-500 bg-blue-50"
+    } catch (error) {
+      console.error("Error requesting notification permission:", error)
+      setLastError(`Permission request failed: ${error.message}`)
     }
   }
 
-  const getNotificationBadgeColor = (priority: string) => {
-    switch (priority) {
-      case "urgent":
-        return "bg-red-600 text-white"
-      case "high":
-        return "bg-orange-600 text-white"
-      case "medium":
-        return "bg-blue-600 text-white"
-      case "low":
-      default:
-        return "bg-gray-600 text-white"
+  const sendNotification = async (options: {
+    title: string
+    body: string
+    tag?: string
+    icon?: string
+    badge?: string
+    requireInteraction?: boolean
+    silent?: boolean
+    vibrate?: number[]
+    data?: any
+  }) => {
+    if (permission !== "granted") {
+      setLastError("Notification permission not granted")
+      return false
     }
+
+    try {
+      const notificationOptions = {
+        body: options.body,
+        icon: options.icon || "/placeholder-logo.png",
+        badge: options.badge || "/placeholder-logo.png",
+        tag: options.tag || `notification-${Date.now()}`,
+        requireInteraction: options.requireInteraction || false,
+        silent: options.silent || false,
+        vibrate: options.vibrate || [200, 100, 200],
+        data: options.data || {},
+        actions: [
+          {
+            action: "open",
+            title: "Open App",
+            icon: "/placeholder-logo.png",
+          },
+          {
+            action: "dismiss",
+            title: "Dismiss",
+            icon: "/placeholder-logo.png",
+          },
+        ],
+      }
+
+      // Try service worker notification first (better for mobile)
+      if (serviceWorkerReady) {
+        const registration = await navigator.serviceWorker.ready
+        await registration.showNotification(options.title, notificationOptions)
+        console.log("Service worker notification sent:", options.title)
+      } else {
+        // Fallback to regular notification
+        const notification = new Notification(options.title, notificationOptions)
+
+        notification.onclick = () => {
+          window.focus()
+          notification.close()
+        }
+
+        console.log("Regular notification sent:", options.title)
+      }
+
+      setNotificationCount((prev) => prev + 1)
+      setLastNotificationSent(`"${options.title}" sent at ${new Date().toLocaleTimeString()}`)
+      setLastError(null)
+      return true
+    } catch (error) {
+      console.error("Error sending notification:", error)
+      setLastError(`Failed to send notification: ${error.message}`)
+      return false
+    }
+  }
+
+  const sendTestNotification = async () => {
+    const success = await sendNotification({
+      title: "🧪 Test Notification",
+      body: "This is a test from your Budget Tracker! If you see this, notifications are working perfectly.",
+      tag: "test",
+      requireInteraction: true,
+      vibrate: [100, 50, 100, 50, 100],
+      data: { type: "test", timestamp: Date.now() },
+    })
+
+    if (success) {
+      setLastNotificationSent("Test notification sent successfully!")
+    }
+  }
+
+  const sendBillReminder = async () => {
+    const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
+    if (pendingBills.length === 0) {
+      setLastError("No pending bills to remind about")
+      return
+    }
+
+    const totalAmount = pendingBills.reduce((sum, bill) => sum + bill.amount, 0)
+    await sendNotification({
+      title: "💳 Bill Reminder",
+      body: `You have ${pendingBills.length} pending bill(s) totaling ${currency}${totalAmount.toLocaleString()}`,
+      tag: "bill-reminder",
+      requireInteraction: true,
+      data: { type: "bills", bills: pendingBills },
+    })
+  }
+
+  const sendGoalReminder = async () => {
+    const todayData = dailyIncome.find((d) => d.isToday)
+    if (!todayData?.isWorkDay || todayData.goal <= 0) {
+      setLastError("No work day goal to remind about")
+      return
+    }
+
+    const progress = (todayData.amount / todayData.goal) * 100
+    const remaining = todayData.goal - todayData.amount
+
+    await sendNotification({
+      title: "🎯 Goal Reminder",
+      body: `Today's progress: ${progress.toFixed(0)}%. ${currency}${remaining.toLocaleString()} remaining to reach your goal!`,
+      tag: "goal-reminder",
+      requireInteraction: true,
+      data: { type: "goal", progress, remaining },
+    })
+  }
+
+  // Calculate current stats
+  const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
+  const todayData = dailyIncome.find((d) => d.isToday)
+  const todayProgress = todayData && todayData.goal > 0 ? (todayData.amount / todayData.goal) * 100 : 0
+
+  if (!isSupported) {
+    return (
+      <Card className="bg-orange-50 border-orange-200">
+        <CardHeader>
+          <CardTitle className="text-orange-800 flex items-center gap-2">
+            <Smartphone className="w-5 h-5" />
+            Notifications Not Available
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-orange-700 mb-4">
+            Your device or browser doesn't support push notifications. This feature requires:
+          </p>
+          <ul className="text-sm text-orange-700 space-y-1 ml-4">
+            <li>• A modern browser (Chrome, Firefox, Safari, Edge)</li>
+            <li>• HTTPS connection (secure site)</li>
+            <li>• Service Worker support</li>
+          </ul>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Bell className="w-5 h-5 text-purple-600" />
-          <h2 className="text-lg font-semibold text-gray-800">Smart Notifications</h2>
-        </div>
-        <div className="text-sm text-gray-500">{currentTime} Manila Time</div>
-      </div>
-
-      {/* Notifications List */}
-      <div className="space-y-3 max-h-96 overflow-y-auto">
-        {notifications.length === 0 ? (
-          <Card className="border-gray-200">
-            <CardContent className="p-6 text-center">
-              <Bell className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-500">No notifications at the moment</p>
-              <p className="text-sm text-gray-400 mt-1">
-                We'll notify you about goals, bills, and savings opportunities
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          notifications.map((notification) => {
-            const IconComponent = notification.icon
-            return (
-              <Card key={notification.id} className={`border-l-4 ${getNotificationColor(notification.type)}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0">
-                      <IconComponent className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-gray-800 text-sm">{notification.title}</h3>
-                        <Badge className={`text-xs ${getNotificationBadgeColor(notification.priority)}`}>
-                          {notification.priority}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-2">{notification.message}</p>
-
-                      {/* Special content for bills due today */}
-                      {notification.bills && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs font-medium text-gray-700">Bills due today:</p>
-                          {notification.bills.map((bill: any, index: number) => (
-                            <div key={index} className="flex justify-between items-center p-2 bg-white rounded border">
-                              <span className="text-sm font-medium">{bill?.name || "Unnamed Bill"}</span>
-                              <span className="text-sm text-gray-600">
-                                {currency}
-                                {safeNumber(bill?.amount).toLocaleString()}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="text-xs text-gray-400 mt-2">
-                        {new Date(notification.timestamp).toLocaleTimeString("en-US", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })
-        )}
-      </div>
-
-      {/* Quick Stats Summary */}
-      {notifications.length > 0 && (
-        <>
-          <Separator />
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="bg-gradient-to-r from-purple-50 to-pink-50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-purple-600" />
-                  <span className="text-sm font-medium text-gray-700">Active Alerts</span>
-                </div>
-                <p className="text-2xl font-bold text-purple-600 mt-1">
-                  {notifications.filter((n) => n.priority === "urgent" || n.priority === "high").length}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-r from-green-50 to-emerald-50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span className="text-sm font-medium text-gray-700">Good News</span>
-                </div>
-                <p className="text-2xl font-bold text-green-600 mt-1">
-                  {notifications.filter((n) => n.type === "success").length}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </>
+    <div className="space-y-6">
+      {/* Error Display */}
+      {lastError && (
+        <Card className="bg-red-50 border-red-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-red-800 text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Notification Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-red-700 mb-3">{lastError}</p>
+            <Button onClick={() => setLastError(null)} variant="outline" size="sm" className="bg-white hover:bg-red-50">
+              Dismiss
+            </Button>
+          </CardContent>
+        </Card>
       )}
+
+      {/* Success Message */}
+      {lastNotificationSent && !lastError && (
+        <Card className="bg-green-50 border-green-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-green-800 text-sm flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              Notification Sent
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-green-700 mb-3">{lastNotificationSent}</p>
+            <Button
+              onClick={() => setLastNotificationSent(null)}
+              variant="outline"
+              size="sm"
+              className="bg-white hover:bg-green-50"
+            >
+              Dismiss
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main Notification Settings */}
+      <Card className="bg-white/90 border-0">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+            {notificationsEnabled ? (
+              <Bell className="w-5 h-5 text-green-600" />
+            ) : (
+              <BellOff className="w-5 h-5 text-gray-400" />
+            )}
+            Push Notifications
+            <div className="flex gap-2 ml-auto">
+              {serviceWorkerReady && <Badge className="bg-green-100 text-green-800 text-xs">SW Ready</Badge>}
+              {notificationCount > 0 && (
+                <Badge className="bg-blue-100 text-blue-800 text-xs">{notificationCount} sent</Badge>
+              )}
+            </div>
+          </CardTitle>
+          <CardDescription>Get real-time alerts on your phone for bills, goals, and reminders</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Permission Status */}
+          <div
+            className={`p-4 rounded-lg border-2 ${
+              permission === "granted"
+                ? "bg-green-50 border-green-200"
+                : permission === "denied"
+                  ? "bg-red-50 border-red-200"
+                  : "bg-blue-50 border-blue-200"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium">
+                {permission === "granted"
+                  ? "✅ Notifications Enabled"
+                  : permission === "denied"
+                    ? "❌ Notifications Blocked"
+                    : "⚠️ Notifications Not Set Up"}
+              </span>
+              {permission === "granted" && (
+                <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
+              )}
+            </div>
+
+            {permission === "default" && (
+              <div className="space-y-3">
+                <p className="text-sm text-blue-700">
+                  Enable notifications to receive reminders on your phone even when the app is closed.
+                </p>
+                <Button onClick={requestPermission} className="w-full bg-blue-600 hover:bg-blue-700">
+                  <Bell className="w-4 h-4 mr-2" />
+                  Enable Push Notifications
+                </Button>
+              </div>
+            )}
+
+            {permission === "denied" && (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700 mb-2">
+                  <strong>Notifications are blocked.</strong> To enable them:
+                </p>
+                <div className="text-xs text-red-600 space-y-2 bg-white p-3 rounded">
+                  <div>
+                    <p className="font-medium">📱 On Mobile Chrome/Edge:</p>
+                    <p>• Tap the 🔒 lock icon in address bar</p>
+                    <p>• Tap "Site settings" → "Notifications" → "Allow"</p>
+                  </div>
+                  <div>
+                    <p className="font-medium">📱 On iPhone Safari:</p>
+                    <p>• Settings → Safari → Website Settings → Notifications → Allow</p>
+                  </div>
+                  <div>
+                    <p className="font-medium">💻 On Desktop:</p>
+                    <p>• Click the 🔒 icon → Site settings → Notifications → Allow</p>
+                  </div>
+                </div>
+                <Button onClick={() => window.location.reload()} variant="outline" className="w-full">
+                  Refresh Page to Try Again
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Test Notifications */}
+          {permission === "granted" && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-2">
+                <Button onClick={sendTestNotification} variant="outline" className="w-full bg-transparent">
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Test Notification
+                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={sendBillReminder} variant="outline" size="sm" disabled={pendingBills.length === 0}>
+                    <AlertTriangle className="w-4 h-4 mr-1" />
+                    Bill Reminder
+                  </Button>
+                  <Button onClick={sendGoalReminder} variant="outline" size="sm" disabled={!todayData?.isWorkDay}>
+                    <Target className="w-4 h-4 mr-1" />
+                    Goal Reminder
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Notification Types Settings */}
+      {permission === "granted" && notificationsEnabled && (
+        <Card className="bg-white/90 border-0">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Notification Types
+            </CardTitle>
+            <CardDescription>Choose what notifications you want to receive</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                <div>
+                  <Label htmlFor="bill-reminders" className="font-medium">
+                    💳 Bill Reminders
+                  </Label>
+                  <p className="text-xs text-gray-600">When bills are due today</p>
+                </div>
+                <Switch
+                  id="bill-reminders"
+                  checked={settings.billReminders}
+                  onCheckedChange={(checked) => setSettings({ ...settings, billReminders: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                <div>
+                  <Label htmlFor="goal-alerts" className="font-medium">
+                    🎯 Goal Alerts
+                  </Label>
+                  <p className="text-xs text-gray-600">When behind on daily goals (6 PM)</p>
+                </div>
+                <Switch
+                  id="goal-alerts"
+                  checked={settings.goalAlerts}
+                  onCheckedChange={(checked) => setSettings({ ...settings, goalAlerts: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <div>
+                  <Label htmlFor="morning-reminders" className="font-medium">
+                    🌅 Morning Reminders
+                  </Label>
+                  <p className="text-xs text-gray-600">Daily motivation at 9 AM</p>
+                </div>
+                <Switch
+                  id="morning-reminders"
+                  checked={settings.morningReminders}
+                  onCheckedChange={(checked) => setSettings({ ...settings, morningReminders: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+                <div>
+                  <Label htmlFor="evening-checkins" className="font-medium">
+                    ⏰ Evening Check-ins
+                  </Label>
+                  <p className="text-xs text-gray-600">Progress updates at 6 PM</p>
+                </div>
+                <Switch
+                  id="evening-checkins"
+                  checked={settings.eveningCheckins}
+                  onCheckedChange={(checked) => setSettings({ ...settings, eveningCheckins: checked })}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Current Status */}
+      <Card className="bg-white/90 border-0">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
+            <Zap className="w-5 h-5" />
+            Current Status
+          </CardTitle>
+          <CardDescription>What you'd be notified about right now</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Pending Bills */}
+          {pendingBills.length > 0 && (
+            <div className="flex items-center gap-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <AlertTriangle className="w-5 h-5 text-orange-600" />
+              <div className="flex-1">
+                <p className="font-medium text-orange-800">Pending Bills</p>
+                <p className="text-sm text-orange-600">
+                  {pendingBills.length} bill(s) • {currency}
+                  {pendingBills.reduce((sum, bill) => sum + bill.amount, 0).toLocaleString()}
+                </p>
+              </div>
+              <Badge className="bg-orange-100 text-orange-800">{pendingBills.length}</Badge>
+            </div>
+          )}
+
+          {/* Today's Goal */}
+          {todayData?.isWorkDay && (
+            <div
+              className={`flex items-center gap-3 p-3 rounded-lg border ${
+                todayProgress >= 100
+                  ? "bg-green-50 border-green-200"
+                  : todayProgress >= 50
+                    ? "bg-blue-50 border-blue-200"
+                    : "bg-red-50 border-red-200"
+              }`}
+            >
+              <Target
+                className={`w-5 h-5 ${
+                  todayProgress >= 100 ? "text-green-600" : todayProgress >= 50 ? "text-blue-600" : "text-red-600"
+                }`}
+              />
+              <div className="flex-1">
+                <p
+                  className={`font-medium ${
+                    todayProgress >= 100 ? "text-green-800" : todayProgress >= 50 ? "text-blue-800" : "text-red-800"
+                  }`}
+                >
+                  Today's Goal Progress
+                </p>
+                <p
+                  className={`text-sm ${
+                    todayProgress >= 100 ? "text-green-600" : todayProgress >= 50 ? "text-blue-600" : "text-red-600"
+                  }`}
+                >
+                  {currency}
+                  {todayData.amount.toLocaleString()} of {currency}
+                  {todayData.goal.toLocaleString()} ({todayProgress.toFixed(0)}%)
+                </p>
+              </div>
+              <Badge
+                className={
+                  todayProgress >= 100
+                    ? "bg-green-100 text-green-800"
+                    : todayProgress >= 50
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-red-100 text-red-800"
+                }
+              >
+                {todayProgress.toFixed(0)}%
+              </Badge>
+            </div>
+          )}
+
+          {/* All Good */}
+          {pendingBills.length === 0 && (!todayData?.isWorkDay || todayProgress >= 80) && (
+            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <div className="flex-1">
+                <p className="font-medium text-green-800">All Good! 🎉</p>
+                <p className="text-sm text-green-600">No urgent notifications needed right now</p>
+              </div>
+              <Badge className="bg-green-100 text-green-800">✓</Badge>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Mobile Tips */}
+      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-purple-800 text-sm flex items-center gap-2">
+            <Smartphone className="w-4 h-4" />📱 Mobile Tips for Best Results
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-xs text-purple-700 space-y-2">
+            <p>
+              • <strong>Add to Home Screen:</strong> Install this app for reliable notifications
+            </p>
+            <p>
+              • <strong>Keep App Open:</strong> Leave a browser tab open in background
+            </p>
+            <p>
+              • <strong>Check Battery Settings:</strong> Allow notifications even in battery saver mode
+            </p>
+            <p>
+              • <strong>Sound On:</strong> Make sure your device isn't on silent mode
+            </p>
+            <p>
+              • <strong>Test First:</strong> Use the "Send Test" button to verify it works
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

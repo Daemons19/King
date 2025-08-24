@@ -1,5 +1,5 @@
-const CACHE_NAME = "budget-tracker-v38"
-const APP_VERSION = "v38"
+const CACHE_NAME = "budget-tracker-v81"
+const APP_VERSION = "v81"
 const urlsToCache = ["/", "/offline.html", "/manifest.json", "/placeholder-logo.png", "/favicon.ico"]
 
 // Install event - cache resources
@@ -91,13 +91,14 @@ self.addEventListener("fetch", (event) => {
   )
 })
 
-// Enhanced notification handling with better error handling
+// Enhanced notification handling with better error handling and mobile support
 self.addEventListener("notificationclick", (event) => {
   console.log("Notification clicked:", event.notification.tag)
 
   event.notification.close()
 
   const notificationData = event.notification.data || {}
+  const action = event.action
 
   event.waitUntil(
     clients
@@ -106,6 +107,11 @@ self.addEventListener("notificationclick", (event) => {
         includeUncontrolled: true,
       })
       .then((clientList) => {
+        // Handle different actions
+        if (action === "dismiss") {
+          return Promise.resolve()
+        }
+
         // If app is already open, focus it
         for (const client of clientList) {
           if (client.url.includes(self.location.origin) && "focus" in client) {
@@ -136,9 +142,15 @@ self.addEventListener("notificationclick", (event) => {
 // Handle notification close
 self.addEventListener("notificationclose", (event) => {
   console.log("Notification closed:", event.notification.tag)
+
+  // Track notification dismissals
+  const notificationData = event.notification.data || {}
+  if (notificationData.type) {
+    console.log(`Notification dismissed: ${notificationData.type}`)
+  }
 })
 
-// Message handler for communication with main app
+// Enhanced message handler for communication with main app
 self.addEventListener("message", (event) => {
   const { type, data } = event.data || {}
 
@@ -163,21 +175,44 @@ self.addEventListener("message", (event) => {
       break
 
     case "SEND_NOTIFICATION":
-      // Handle notification requests from main app with error handling
+      // Handle notification requests from main app with enhanced error handling
       if (data && data.title && data.body) {
+        const notificationOptions = {
+          body: data.body,
+          icon: data.icon || "/placeholder-logo.png",
+          badge: data.badge || "/placeholder-logo.png",
+          tag: data.tag || "app-notification",
+          vibrate: data.vibrate || [200, 100, 200],
+          requireInteraction: data.requireInteraction || false,
+          silent: data.silent || false,
+          data: data.data || {},
+          actions: [
+            {
+              action: "open",
+              title: "Open App",
+              icon: "/placeholder-logo.png",
+            },
+            {
+              action: "dismiss",
+              title: "Dismiss",
+              icon: "/placeholder-logo.png",
+            },
+          ],
+        }
+
         self.registration
-          .showNotification(data.title, {
-            body: data.body,
-            icon: data.icon || "/placeholder-logo.png",
-            badge: data.badge || "/placeholder-logo.png",
-            tag: data.tag || "app-notification",
-            vibrate: data.vibrate || [200, 100, 200],
-            requireInteraction: data.requireInteraction || false,
-            silent: data.silent || false,
-            data: data.data || {},
-          })
+          .showNotification(data.title, notificationOptions)
           .then(() => {
-            console.log("Notification sent successfully")
+            console.log("Notification sent successfully:", data.title)
+            // Send success message back to main app
+            self.clients.matchAll().then((clients) => {
+              clients.forEach((client) => {
+                client.postMessage({
+                  type: "NOTIFICATION_SUCCESS",
+                  title: data.title,
+                })
+              })
+            })
           })
           .catch((error) => {
             console.error("Error sending notification:", error)
@@ -193,10 +228,15 @@ self.addEventListener("message", (event) => {
           })
       }
       break
+
+    case "SCHEDULE_NOTIFICATION":
+      // Handle scheduled notifications (for future implementation)
+      console.log("Scheduled notification request received:", data)
+      break
   }
 })
 
-// Push notification handler
+// Enhanced push notification handler with better mobile support
 self.addEventListener("push", (event) => {
   console.log("Push message received")
 
@@ -222,8 +262,20 @@ self.addEventListener("push", (event) => {
     badge: notificationData.badge,
     tag: notificationData.tag,
     vibrate: [100, 50, 100],
-    requireInteraction: false,
+    requireInteraction: true, // Better for mobile
     data: notificationData.data || {},
+    actions: [
+      {
+        action: "open",
+        title: "Open App",
+        icon: "/placeholder-logo.png",
+      },
+      {
+        action: "dismiss",
+        title: "Dismiss",
+        icon: "/placeholder-logo.png",
+      },
+    ],
   }
 
   event.waitUntil(
@@ -233,23 +285,50 @@ self.addEventListener("push", (event) => {
   )
 })
 
-// Handle app installation
+// Handle app installation with enhanced notification
 self.addEventListener("appinstalled", (event) => {
   console.log("PWA was installed")
 
-  // Show welcome notification with error handling
+  // Show enhanced welcome notification
   self.registration
     .showNotification("Budget Tracker Installed! 🎉", {
-      body: "Your budget tracker is now installed and ready to use offline!",
+      body: "Your budget tracker is now installed and ready to use offline! You'll receive notifications even when the app is closed.",
       icon: "/placeholder-logo.png",
       badge: "/placeholder-logo.png",
       tag: "app-installed",
       requireInteraction: true,
       vibrate: [200, 100, 200, 100, 200],
+      data: {
+        type: "installation",
+        timestamp: Date.now(),
+      },
+      actions: [
+        {
+          action: "open",
+          title: "Open App",
+          icon: "/placeholder-logo.png",
+        },
+      ],
     })
     .catch((error) => {
       console.error("Error showing installation notification:", error)
     })
 })
 
-console.log(`Service Worker ${APP_VERSION} loaded successfully`)
+// Background sync for offline notifications (future enhancement)
+self.addEventListener("sync", (event) => {
+  if (event.tag === "background-sync") {
+    console.log("Background sync triggered")
+    // Handle background sync for notifications when back online
+  }
+})
+
+// Periodic background sync for scheduled notifications (future enhancement)
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "daily-reminders") {
+    console.log("Periodic sync triggered for daily reminders")
+    // Handle periodic notifications
+  }
+})
+
+console.log(`Service Worker ${APP_VERSION} loaded successfully with enhanced notification support`)
