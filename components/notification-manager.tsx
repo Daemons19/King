@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Bell, BellOff, AlertTriangle, CheckCircle, Smartphone, Send, Settings, Zap, Target } from "lucide-react"
+import { Bell, BellOff, AlertTriangle, CheckCircle, Smartphone, Send, Settings, Zap, Target, Wifi } from "lucide-react"
 
 interface NotificationManagerProps {
   weeklyPayables: Array<{
@@ -33,10 +33,11 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>("default")
   const [isSupported, setIsSupported] = useState(false)
-  const [serviceWorkerReady, setServiceWorkerReady] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const [lastNotificationSent, setLastNotificationSent] = useState<string | null>(null)
   const [notificationCount, setNotificationCount] = useState(0)
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
+  const [isOnline, setIsOnline] = useState(true)
   const [settings, setSettings] = useState({
     billReminders: true,
     goalAlerts: true,
@@ -46,47 +47,120 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     eveningCheckins: true,
   })
 
-  // Initialize notification system
+  // Add debug message
+  const addDebug = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString()
+    setDebugInfo((prev) => [`[${timestamp}] ${message}`, ...prev.slice(0, 9)])
+    console.log(`[NotificationManager] ${message}`)
+  }
+
+  // Check online status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      addDebug("Device is online")
+    }
+    const handleOffline = () => {
+      setIsOnline(false)
+      addDebug("Device is offline")
+    }
+
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+    setIsOnline(navigator.onLine)
+
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
+
+  // Initialize notification system with fallback approach
   useEffect(() => {
     const initNotifications = async () => {
-      // Check if notifications are supported
-      const supported = "Notification" in window && "serviceWorker" in navigator
-      setIsSupported(supported)
+      addDebug("Initializing notification system...")
 
-      if (!supported) {
-        setLastError("Notifications not supported on this device/browser")
+      // Check basic support
+      const basicSupport = "Notification" in window
+      setIsSupported(basicSupport)
+
+      if (!basicSupport) {
+        setLastError("Notifications not supported on this browser")
+        addDebug("Notification API not available")
         return
       }
 
+      addDebug("Notification API available")
+
       // Get current permission
-      setPermission(Notification.permission)
-
-      // Register service worker
-      try {
-        const registration = await navigator.serviceWorker.register("/sw.js")
-        console.log("Service Worker registered:", registration)
-        setServiceWorkerReady(true)
-
-        // Listen for service worker messages
-        navigator.serviceWorker.addEventListener("message", (event) => {
-          if (event.data?.type === "NOTIFICATION_ERROR") {
-            setLastError(event.data.error)
-          }
-        })
-      } catch (error) {
-        console.error("Service Worker registration failed:", error)
-        setLastError("Service Worker registration failed")
-      }
+      const currentPermission = Notification.permission
+      setPermission(currentPermission)
+      addDebug(`Current permission: ${currentPermission}`)
 
       // Load saved settings
-      const savedSettings = localStorage.getItem("notificationSettings")
-      if (savedSettings) {
-        try {
+      try {
+        const savedSettings = localStorage.getItem("notificationSettings")
+        if (savedSettings) {
           const parsed = JSON.parse(savedSettings)
           setSettings(parsed)
-          setNotificationsEnabled(parsed.enabled && Notification.permission === "granted")
+          setNotificationsEnabled(parsed.enabled && currentPermission === "granted")
+          addDebug("Loaded saved notification settings")
+        }
+      } catch (error) {
+        addDebug(`Error loading settings: ${error.message}`)
+      }
+
+      // Register inline service worker to avoid MIME type issues
+      if ("serviceWorker" in navigator) {
+        try {
+          // Create service worker as blob to avoid MIME type issues
+          const swCode = `
+            const CACHE_NAME = "budget-tracker-inline-v1";
+            
+            self.addEventListener('install', (event) => {
+              console.log('Inline SW installed');
+              self.skipWaiting();
+            });
+            
+            self.addEventListener('activate', (event) => {
+              console.log('Inline SW activated');
+              self.clients.claim();
+            });
+            
+            self.addEventListener('notificationclick', (event) => {
+              console.log('Notification clicked:', event.notification.tag);
+              event.notification.close();
+              
+              event.waitUntil(
+                clients.matchAll({ type: 'window' }).then((clientList) => {
+                  for (const client of clientList) {
+                    if (client.url.includes(self.location.origin) && 'focus' in client) {
+                      return client.focus();
+                    }
+                  }
+                  if (clients.openWindow) {
+                    return clients.openWindow('/');
+                  }
+                })
+              );
+            });
+            
+            self.addEventListener('notificationclose', (event) => {
+              console.log('Notification closed:', event.notification.tag);
+            });
+          `
+
+          const blob = new Blob([swCode], { type: "application/javascript" })
+          const swUrl = URL.createObjectURL(blob)
+
+          const registration = await navigator.serviceWorker.register(swUrl)
+          addDebug("Inline service worker registered successfully")
+
+          // Clean up blob URL
+          URL.revokeObjectURL(swUrl)
         } catch (error) {
-          console.error("Error loading notification settings:", error)
+          addDebug(`Service worker registration failed: ${error.message}`)
+          // Continue without service worker - notifications can still work
         }
       }
     }
@@ -103,105 +177,60 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     localStorage.setItem("notificationSettings", JSON.stringify(settingsToSave))
   }, [settings, notificationsEnabled])
 
-  // Auto-send notifications based on data changes
-  useEffect(() => {
-    if (!notificationsEnabled || permission !== "granted") return
-
-    const sendAutoNotifications = async () => {
-      const now = new Date()
-      const currentHour = now.getHours()
-      const currentDay = now.toLocaleDateString("en-US", { weekday: "short" })
-
-      // Morning reminders (9 AM)
-      if (currentHour === 9 && settings.morningReminders) {
-        const todayData = dailyIncome.find((d) => d.day === currentDay)
-        if (todayData?.isWorkDay && todayData.goal > 0) {
-          await sendNotification({
-            title: "🌅 Good Morning!",
-            body: `Today's goal: ${currency}${todayData.goal.toLocaleString()}. Let's make it happen!`,
-            tag: "morning-reminder",
-            data: { type: "goal", day: currentDay },
-          })
-        }
-      }
-
-      // Evening check-ins (6 PM)
-      if (currentHour === 18 && settings.eveningCheckins) {
-        const todayData = dailyIncome.find((d) => d.day === currentDay)
-        if (todayData?.isWorkDay && todayData.goal > 0) {
-          const progress = (todayData.amount / todayData.goal) * 100
-          if (progress < 80) {
-            await sendNotification({
-              title: "⏰ Evening Check-in",
-              body: `You're at ${progress.toFixed(0)}% of today's goal. ${currency}${(todayData.goal - todayData.amount).toLocaleString()} to go!`,
-              tag: "evening-checkin",
-              data: { type: "goal", progress },
-            })
-          }
-        }
-      }
-
-      // Bill reminders
-      if (settings.billReminders) {
-        const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
-        const billsDueToday = pendingBills.filter((p) => p.dueDay === currentDay)
-
-        if (billsDueToday.length > 0) {
-          const totalAmount = billsDueToday.reduce((sum, bill) => sum + bill.amount, 0)
-          await sendNotification({
-            title: "💳 Bills Due Today!",
-            body: `${billsDueToday.length} bill(s) due today: ${currency}${totalAmount.toLocaleString()}`,
-            tag: "bills-due-today",
-            requireInteraction: true,
-            data: { type: "bills", bills: billsDueToday },
-          })
-        }
-      }
-    }
-
-    // Check every minute for notification triggers
-    const interval = setInterval(sendAutoNotifications, 60000)
-    return () => clearInterval(interval)
-  }, [notificationsEnabled, permission, settings, weeklyPayables, dailyIncome, currency])
-
   const requestPermission = async () => {
     if (!isSupported) {
       setLastError("Notifications are not supported on this device/browser")
+      addDebug("Attempted to request permission on unsupported device")
       return
     }
 
     try {
       setLastError(null)
+      addDebug("Requesting notification permission...")
 
-      // Request permission
+      // Request permission with user gesture
       const result = await Notification.requestPermission()
       setPermission(result)
+      addDebug(`Permission result: ${result}`)
 
       if (result === "granted") {
         setNotificationsEnabled(true)
+        addDebug("Permission granted, sending welcome notification")
 
-        // Send welcome notification
-        await sendNotification({
-          title: "🎉 Notifications Enabled!",
-          body: "You'll now receive reminders for bills and goals. Tap to open the app.",
+        // Send immediate welcome notification
+        const welcomeNotification = new Notification("🎉 Notifications Enabled!", {
+          body: "You'll now receive reminders for bills and goals. This notification proves it's working!",
+          icon: "/placeholder-logo.png",
+          badge: "/placeholder-logo.png",
           tag: "welcome",
           requireInteraction: true,
-          data: { type: "welcome" },
+          vibrate: [200, 100, 200, 100, 200],
+          data: { type: "welcome", timestamp: Date.now() },
         })
 
-        setLastNotificationSent("Welcome notification sent successfully!")
+        welcomeNotification.onclick = () => {
+          window.focus()
+          welcomeNotification.close()
+        }
+
+        setLastNotificationSent("Welcome notification sent!")
+        setNotificationCount((prev) => prev + 1)
+        addDebug("Welcome notification created successfully")
       } else if (result === "denied") {
         setLastError("Notifications were denied. Please enable them in your browser settings.")
+        addDebug("Permission denied by user")
       } else {
         setLastError("Notification permission was not granted")
+        addDebug("Permission not granted (dismissed)")
       }
     } catch (error) {
       console.error("Error requesting notification permission:", error)
       setLastError(`Permission request failed: ${error.message}`)
+      addDebug(`Permission request error: ${error.message}`)
     }
   }
 
-  const sendNotification = async (options: {
+  const sendDirectNotification = async (options: {
     title: string
     body: string
     tag?: string
@@ -214,73 +243,80 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   }) => {
     if (permission !== "granted") {
       setLastError("Notification permission not granted")
+      addDebug("Attempted to send notification without permission")
       return false
     }
 
     try {
+      addDebug(`Sending notification: ${options.title}`)
+
       const notificationOptions = {
         body: options.body,
         icon: options.icon || "/placeholder-logo.png",
         badge: options.badge || "/placeholder-logo.png",
         tag: options.tag || `notification-${Date.now()}`,
-        requireInteraction: options.requireInteraction || false,
+        requireInteraction: options.requireInteraction || true,
         silent: options.silent || false,
         vibrate: options.vibrate || [200, 100, 200],
         data: options.data || {},
-        actions: [
-          {
-            action: "open",
-            title: "Open App",
-            icon: "/placeholder-logo.png",
-          },
-          {
-            action: "dismiss",
-            title: "Dismiss",
-            icon: "/placeholder-logo.png",
-          },
-        ],
       }
 
-      // Try service worker notification first (better for mobile)
-      if (serviceWorkerReady) {
-        const registration = await navigator.serviceWorker.ready
-        await registration.showNotification(options.title, notificationOptions)
-        console.log("Service worker notification sent:", options.title)
-      } else {
-        // Fallback to regular notification
+      // Try service worker first, then fallback to direct notification
+      try {
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.ready
+          await registration.showNotification(options.title, notificationOptions)
+          addDebug("Service worker notification sent successfully")
+        } else {
+          throw new Error("Service worker not available")
+        }
+      } catch (swError) {
+        addDebug(`Service worker failed, using direct notification: ${swError.message}`)
+
+        // Fallback to direct notification
         const notification = new Notification(options.title, notificationOptions)
 
         notification.onclick = () => {
           window.focus()
           notification.close()
+          addDebug("Notification clicked")
         }
 
-        console.log("Regular notification sent:", options.title)
+        notification.onshow = () => {
+          addDebug("Notification shown successfully")
+        }
+
+        notification.onerror = (error) => {
+          addDebug(`Notification error: ${error}`)
+        }
       }
 
       setNotificationCount((prev) => prev + 1)
       setLastNotificationSent(`"${options.title}" sent at ${new Date().toLocaleTimeString()}`)
       setLastError(null)
+      addDebug("Notification sent successfully")
       return true
     } catch (error) {
       console.error("Error sending notification:", error)
       setLastError(`Failed to send notification: ${error.message}`)
+      addDebug(`Notification failed: ${error.message}`)
       return false
     }
   }
 
   const sendTestNotification = async () => {
-    const success = await sendNotification({
-      title: "🧪 Test Notification",
-      body: "This is a test from your Budget Tracker! If you see this, notifications are working perfectly.",
+    addDebug("Test notification requested")
+    const success = await sendDirectNotification({
+      title: "🧪 Test Notification - Budget Tracker",
+      body: "SUCCESS! If you see this notification on your phone, everything is working perfectly! 🎉",
       tag: "test",
       requireInteraction: true,
-      vibrate: [100, 50, 100, 50, 100],
+      vibrate: [100, 50, 100, 50, 100, 50, 100],
       data: { type: "test", timestamp: Date.now() },
     })
 
     if (success) {
-      setLastNotificationSent("Test notification sent successfully!")
+      addDebug("Test notification sent successfully")
     }
   }
 
@@ -288,15 +324,17 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
     if (pendingBills.length === 0) {
       setLastError("No pending bills to remind about")
+      addDebug("No pending bills found")
       return
     }
 
     const totalAmount = pendingBills.reduce((sum, bill) => sum + bill.amount, 0)
-    await sendNotification({
-      title: "💳 Bill Reminder",
-      body: `You have ${pendingBills.length} pending bill(s) totaling ${currency}${totalAmount.toLocaleString()}`,
+    await sendDirectNotification({
+      title: "💳 Bill Reminder - Budget Tracker",
+      body: `You have ${pendingBills.length} pending bill(s) totaling ${currency}${totalAmount.toLocaleString()}. Don't forget to pay them!`,
       tag: "bill-reminder",
       requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200],
       data: { type: "bills", bills: pendingBills },
     })
   }
@@ -305,58 +343,107 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     const todayData = dailyIncome.find((d) => d.isToday)
     if (!todayData?.isWorkDay || todayData.goal <= 0) {
       setLastError("No work day goal to remind about")
+      addDebug("No work day goal found for today")
       return
     }
 
     const progress = (todayData.amount / todayData.goal) * 100
     const remaining = todayData.goal - todayData.amount
 
-    await sendNotification({
-      title: "🎯 Goal Reminder",
-      body: `Today's progress: ${progress.toFixed(0)}%. ${currency}${remaining.toLocaleString()} remaining to reach your goal!`,
+    await sendDirectNotification({
+      title: "🎯 Goal Reminder - Budget Tracker",
+      body: `Today's progress: ${progress.toFixed(0)}%. You need ${currency}${remaining.toLocaleString()} more to reach your daily goal!`,
       tag: "goal-reminder",
       requireInteraction: true,
+      vibrate: [150, 75, 150, 75, 150],
       data: { type: "goal", progress, remaining },
     })
   }
+
+  const sendUrgentAlert = async () => {
+    await sendDirectNotification({
+      title: "🚨 URGENT - Budget Tracker",
+      body: "This is an urgent test alert with maximum vibration and sound. You should definitely notice this!",
+      tag: "urgent-test",
+      requireInteraction: true,
+      silent: false,
+      vibrate: [300, 100, 300, 100, 300, 100, 300],
+      data: { type: "urgent", timestamp: Date.now() },
+    })
+  }
+
+  // Auto-send notifications based on data changes (simplified)
+  useEffect(() => {
+    if (!notificationsEnabled || permission !== "granted") return
+
+    const checkAndSendNotifications = () => {
+      const now = new Date()
+      const currentHour = now.getHours()
+      const currentMinute = now.getMinutes()
+      const currentDay = now.toLocaleDateString("en-US", { weekday: "short" })
+
+      // Send notifications at specific times (every hour for testing)
+      if (currentMinute === 0 && settings.dailyReminders) {
+        const todayData = dailyIncome.find((d) => d.day === currentDay)
+        if (todayData?.isWorkDay && todayData.goal > 0) {
+          const progress = (todayData.amount / todayData.goal) * 100
+
+          if (progress < 50 && currentHour >= 12) {
+            sendDirectNotification({
+              title: "⚡ Daily Goal Alert",
+              body: `You're at ${progress.toFixed(0)}% of today's goal. Time to hustle! ${currency}${(todayData.goal - todayData.amount).toLocaleString()} to go.`,
+              tag: "daily-alert",
+              requireInteraction: true,
+              vibrate: [200, 100, 200],
+            })
+          }
+        }
+      }
+    }
+
+    // Check every minute
+    const interval = setInterval(checkAndSendNotifications, 60000)
+    return () => clearInterval(interval)
+  }, [notificationsEnabled, permission, settings, weeklyPayables, dailyIncome, currency])
 
   // Calculate current stats
   const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
   const todayData = dailyIncome.find((d) => d.isToday)
   const todayProgress = todayData && todayData.goal > 0 ? (todayData.amount / todayData.goal) * 100 : 0
 
-  if (!isSupported) {
-    return (
-      <Card className="bg-orange-50 border-orange-200">
-        <CardHeader>
-          <CardTitle className="text-orange-800 flex items-center gap-2">
-            <Smartphone className="w-5 h-5" />
-            Notifications Not Available
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-orange-700 mb-4">
-            Your device or browser doesn't support push notifications. This feature requires:
-          </p>
-          <ul className="text-sm text-orange-700 space-y-1 ml-4">
-            <li>• A modern browser (Chrome, Firefox, Safari, Edge)</li>
-            <li>• HTTPS connection (secure site)</li>
-            <li>• Service Worker support</li>
-          </ul>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Debug Info */}
+      {debugInfo.length > 0 && (
+        <Card className="bg-gray-50 border-gray-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-gray-800 text-sm flex items-center gap-2">
+              <Wifi className="w-4 h-4" />
+              Debug Log {isOnline ? "🟢" : "🔴"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs text-gray-600 space-y-1 max-h-32 overflow-y-auto">
+              {debugInfo.map((info, index) => (
+                <div key={index} className="font-mono">
+                  {info}
+                </div>
+              ))}
+            </div>
+            <Button onClick={() => setDebugInfo([])} variant="outline" size="sm" className="mt-2 text-xs">
+              Clear Log
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Error Display */}
       {lastError && (
         <Card className="bg-red-50 border-red-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-red-800 text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
-              Notification Error
+              Error
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -374,11 +461,12 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           <CardHeader className="pb-2">
             <CardTitle className="text-green-800 text-sm flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
-              Notification Sent
+              Notification Sent ✅
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-green-700 mb-3">{lastNotificationSent}</p>
+            <p className="text-xs text-green-600 mb-3">Check your phone's notification panel!</p>
             <Button
               onClick={() => setLastNotificationSent(null)}
               variant="outline"
@@ -402,13 +490,13 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             )}
             Push Notifications
             <div className="flex gap-2 ml-auto">
-              {serviceWorkerReady && <Badge className="bg-green-100 text-green-800 text-xs">SW Ready</Badge>}
+              {isSupported && <Badge className="bg-green-100 text-green-800 text-xs">Supported</Badge>}
               {notificationCount > 0 && (
                 <Badge className="bg-blue-100 text-blue-800 text-xs">{notificationCount} sent</Badge>
               )}
             </div>
           </CardTitle>
-          <CardDescription>Get real-time alerts on your phone for bills, goals, and reminders</CardDescription>
+          <CardDescription>Get real-time alerts on your Poco F6 for bills, goals, and reminders</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Permission Status */}
@@ -437,7 +525,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             {permission === "default" && (
               <div className="space-y-3">
                 <p className="text-sm text-blue-700">
-                  Enable notifications to receive reminders on your phone even when the app is closed.
+                  <strong>📱 For Poco F6:</strong> Enable notifications to receive alerts even when the app is closed.
                 </p>
                 <Button onClick={requestPermission} className="w-full bg-blue-600 hover:bg-blue-700">
                   <Bell className="w-4 h-4 mr-2" />
@@ -449,21 +537,27 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             {permission === "denied" && (
               <div className="space-y-3">
                 <p className="text-sm text-red-700 mb-2">
-                  <strong>Notifications are blocked.</strong> To enable them:
+                  <strong>Notifications are blocked.</strong> To enable on your Poco F6:
                 </p>
                 <div className="text-xs text-red-600 space-y-2 bg-white p-3 rounded">
                   <div>
-                    <p className="font-medium">📱 On Mobile Chrome/Edge:</p>
-                    <p>• Tap the 🔒 lock icon in address bar</p>
-                    <p>• Tap "Site settings" → "Notifications" → "Allow"</p>
+                    <p className="font-medium">📱 Poco F6 Chrome Steps:</p>
+                    <p>1. Tap the ⋮ menu (3 dots) in Chrome</p>
+                    <p>2. Tap "Site settings" or "Permissions"</p>
+                    <p>3. Tap "Notifications" → "Allow"</p>
+                    <p>4. Refresh this page</p>
                   </div>
                   <div>
-                    <p className="font-medium">📱 On iPhone Safari:</p>
-                    <p>• Settings → Safari → Website Settings → Notifications → Allow</p>
+                    <p className="font-medium">📱 Alternative Method:</p>
+                    <p>1. Long press on this browser tab</p>
+                    <p>2. Tap "Site settings"</p>
+                    <p>3. Enable "Notifications"</p>
                   </div>
                   <div>
-                    <p className="font-medium">💻 On Desktop:</p>
-                    <p>• Click the 🔒 icon → Site settings → Notifications → Allow</p>
+                    <p className="font-medium">⚙️ MIUI Settings:</p>
+                    <p>1. Settings → Apps → Chrome</p>
+                    <p>2. Notifications → Allow all</p>
+                    <p>3. Make sure "Show on lock screen" is enabled</p>
                   </div>
                 </div>
                 <Button onClick={() => window.location.reload()} variant="outline" className="w-full">
@@ -477,18 +571,28 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           {permission === "granted" && (
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-2">
-                <Button onClick={sendTestNotification} variant="outline" className="w-full bg-transparent">
-                  <Send className="w-4 h-4 mr-2" />
-                  Send Test Notification
+                <Button
+                  onClick={sendTestNotification}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+                >
+                  <Send className="w-4 h-4 mr-2" />🧪 Send Test Notification (Check Your Phone!)
                 </Button>
+
+                <Button
+                  onClick={sendUrgentAlert}
+                  className="w-full bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700"
+                >
+                  <Zap className="w-4 h-4 mr-2" />🚨 Send URGENT Alert (Max Vibration)
+                </Button>
+
                 <div className="grid grid-cols-2 gap-2">
                   <Button onClick={sendBillReminder} variant="outline" size="sm" disabled={pendingBills.length === 0}>
                     <AlertTriangle className="w-4 h-4 mr-1" />
-                    Bill Reminder
+                    Bill Alert
                   </Button>
                   <Button onClick={sendGoalReminder} variant="outline" size="sm" disabled={!todayData?.isWorkDay}>
                     <Target className="w-4 h-4 mr-1" />
-                    Goal Reminder
+                    Goal Alert
                   </Button>
                 </div>
               </div>
@@ -528,7 +632,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
                   <Label htmlFor="goal-alerts" className="font-medium">
                     🎯 Goal Alerts
                   </Label>
-                  <p className="text-xs text-gray-600">When behind on daily goals (6 PM)</p>
+                  <p className="text-xs text-gray-600">When behind on daily goals</p>
                 </div>
                 <Switch
                   id="goal-alerts"
@@ -539,29 +643,15 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
 
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div>
-                  <Label htmlFor="morning-reminders" className="font-medium">
-                    🌅 Morning Reminders
+                  <Label htmlFor="daily-reminders" className="font-medium">
+                    ⏰ Hourly Reminders
                   </Label>
-                  <p className="text-xs text-gray-600">Daily motivation at 9 AM</p>
+                  <p className="text-xs text-gray-600">Progress checks every hour</p>
                 </div>
                 <Switch
-                  id="morning-reminders"
-                  checked={settings.morningReminders}
-                  onCheckedChange={(checked) => setSettings({ ...settings, morningReminders: checked })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                <div>
-                  <Label htmlFor="evening-checkins" className="font-medium">
-                    ⏰ Evening Check-ins
-                  </Label>
-                  <p className="text-xs text-gray-600">Progress updates at 6 PM</p>
-                </div>
-                <Switch
-                  id="evening-checkins"
-                  checked={settings.eveningCheckins}
-                  onCheckedChange={(checked) => setSettings({ ...settings, eveningCheckins: checked })}
+                  id="daily-reminders"
+                  checked={settings.dailyReminders}
+                  onCheckedChange={(checked) => setSettings({ ...settings, dailyReminders: checked })}
                 />
               </div>
             </div>
@@ -656,29 +746,63 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
         </CardContent>
       </Card>
 
-      {/* Mobile Tips */}
+      {/* Poco F6 Specific Instructions */}
       <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
         <CardHeader className="pb-3">
           <CardTitle className="text-purple-800 text-sm flex items-center gap-2">
-            <Smartphone className="w-4 h-4" />📱 Mobile Tips for Best Results
+            <Smartphone className="w-4 h-4" />📱 Poco F6 Setup Guide
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-xs text-purple-700 space-y-2">
+          <div className="text-xs text-purple-700 space-y-3">
+            <div className="bg-white p-3 rounded border">
+              <p className="font-medium mb-2">🔧 MIUI Notification Settings:</p>
+              <p>• Settings → Apps → Chrome → Notifications → Allow all</p>
+              <p>• Settings → Notifications → Advanced → Show on lock screen ✓</p>
+              <p>• Settings → Battery → Chrome → No restrictions</p>
+            </div>
+
+            <div className="bg-white p-3 rounded border">
+              <p className="font-medium mb-2">🌐 Chrome Settings:</p>
+              <p>• Chrome → ⋮ → Settings → Site settings → Notifications → Allow</p>
+              <p>• Make sure "Blocked" list doesn't include this site</p>
+            </div>
+
+            <div className="bg-white p-3 rounded border">
+              <p className="font-medium mb-2">📲 Testing Tips:</p>
+              <p>• Use "Send Test Notification" button above</p>
+              <p>• Check notification panel by swiping down</p>
+              <p>• Try "URGENT Alert" for maximum vibration</p>
+              <p>• Keep this browser tab open in background</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Device Info */}
+      <Card className="bg-gray-50 border-gray-200">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-gray-800 text-sm">Device Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-xs text-gray-600 space-y-1">
             <p>
-              • <strong>Add to Home Screen:</strong> Install this app for reliable notifications
+              <strong>Browser:</strong> {navigator.userAgent.includes("Chrome") ? "Chrome" : "Other"}
             </p>
             <p>
-              • <strong>Keep App Open:</strong> Leave a browser tab open in background
+              <strong>Platform:</strong> {navigator.platform}
             </p>
             <p>
-              • <strong>Check Battery Settings:</strong> Allow notifications even in battery saver mode
+              <strong>Online:</strong> {isOnline ? "Yes" : "No"}
             </p>
             <p>
-              • <strong>Sound On:</strong> Make sure your device isn't on silent mode
+              <strong>Notification Support:</strong> {isSupported ? "Yes" : "No"}
             </p>
             <p>
-              • <strong>Test First:</strong> Use the "Send Test" button to verify it works
+              <strong>Permission:</strong> {permission}
+            </p>
+            <p>
+              <strong>Service Worker:</strong> {"serviceWorker" in navigator ? "Supported" : "Not Supported"}
             </p>
           </div>
         </CardContent>
