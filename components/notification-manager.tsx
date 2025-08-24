@@ -6,7 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Bell, BellOff, AlertTriangle, CheckCircle, Smartphone, Send, Settings, Zap, Target, Wifi } from "lucide-react"
+import {
+  Bell,
+  BellOff,
+  AlertTriangle,
+  CheckCircle,
+  Smartphone,
+  Send,
+  Settings,
+  Zap,
+  Target,
+  Wifi,
+  Download,
+} from "lucide-react"
 
 interface NotificationManagerProps {
   weeklyPayables: Array<{
@@ -33,11 +45,14 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   const [notificationsEnabled, setNotificationsEnabled] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>("default")
   const [isSupported, setIsSupported] = useState(false)
+  const [serviceWorkerReady, setServiceWorkerReady] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const [lastNotificationSent, setLastNotificationSent] = useState<string | null>(null)
   const [notificationCount, setNotificationCount] = useState(0)
   const [debugInfo, setDebugInfo] = useState<string[]>([])
   const [isOnline, setIsOnline] = useState(true)
+  const [isPWA, setIsPWA] = useState(false)
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
   const [settings, setSettings] = useState({
     billReminders: true,
     goalAlerts: true,
@@ -53,6 +68,25 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     setDebugInfo((prev) => [`[${timestamp}] ${message}`, ...prev.slice(0, 9)])
     console.log(`[NotificationManager] ${message}`)
   }
+
+  // Check if running as PWA
+  useEffect(() => {
+    const checkPWA = () => {
+      const isPWAMode =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true ||
+        document.referrer.includes("android-app://")
+
+      setIsPWA(isPWAMode)
+      addDebug(`Running as PWA: ${isPWAMode}`)
+
+      if (isPWAMode) {
+        addDebug("PWA mode detected - notifications MUST use Service Worker")
+      }
+    }
+
+    checkPWA()
+  }, [])
 
   // Check online status
   useEffect(() => {
@@ -75,27 +109,66 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     }
   }, [])
 
-  // Initialize notification system with fallback approach
+  // Initialize notification system with proper service worker
   useEffect(() => {
     const initNotifications = async () => {
       addDebug("Initializing notification system...")
 
       // Check basic support
-      const basicSupport = "Notification" in window
+      const basicSupport = "Notification" in window && "serviceWorker" in navigator
       setIsSupported(basicSupport)
 
       if (!basicSupport) {
-        setLastError("Notifications not supported on this browser")
-        addDebug("Notification API not available")
+        setLastError("Notifications or Service Workers not supported on this device")
+        addDebug("Notification API or Service Worker not available")
         return
       }
 
-      addDebug("Notification API available")
+      addDebug("Notification API and Service Worker available")
 
       // Get current permission
       const currentPermission = Notification.permission
       setPermission(currentPermission)
       addDebug(`Current permission: ${currentPermission}`)
+
+      // Register service worker - CRITICAL for PWA notifications
+      try {
+        addDebug("Registering service worker...")
+
+        // Check if service worker is already registered
+        const existingRegistration = await navigator.serviceWorker.getRegistration()
+
+        if (existingRegistration) {
+          addDebug("Using existing service worker registration")
+          setRegistration(existingRegistration)
+          setServiceWorkerReady(true)
+        } else {
+          addDebug("No existing service worker found - this might be the issue")
+          setLastError("Service Worker not found. Please refresh the app or reinstall the PWA.")
+          return
+        }
+
+        // Wait for service worker to be ready
+        const readyRegistration = await navigator.serviceWorker.ready
+        setRegistration(readyRegistration)
+        setServiceWorkerReady(true)
+        addDebug("Service worker is ready for notifications")
+
+        // Listen for service worker messages
+        navigator.serviceWorker.addEventListener("message", (event) => {
+          if (event.data?.type === "NOTIFICATION_ERROR") {
+            setLastError(event.data.error)
+            addDebug(`SW Error: ${event.data.error}`)
+          } else if (event.data?.type === "NOTIFICATION_SUCCESS") {
+            addDebug(`SW Success: ${event.data.title}`)
+          }
+        })
+      } catch (error) {
+        console.error("Service Worker initialization failed:", error)
+        setLastError(`Service Worker failed: ${error.message}`)
+        addDebug(`SW Error: ${error.message}`)
+        return
+      }
 
       // Load saved settings
       try {
@@ -108,60 +181,6 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
         }
       } catch (error) {
         addDebug(`Error loading settings: ${error.message}`)
-      }
-
-      // Register inline service worker to avoid MIME type issues
-      if ("serviceWorker" in navigator) {
-        try {
-          // Create service worker as blob to avoid MIME type issues
-          const swCode = `
-            const CACHE_NAME = "budget-tracker-inline-v1";
-            
-            self.addEventListener('install', (event) => {
-              console.log('Inline SW installed');
-              self.skipWaiting();
-            });
-            
-            self.addEventListener('activate', (event) => {
-              console.log('Inline SW activated');
-              self.clients.claim();
-            });
-            
-            self.addEventListener('notificationclick', (event) => {
-              console.log('Notification clicked:', event.notification.tag);
-              event.notification.close();
-              
-              event.waitUntil(
-                clients.matchAll({ type: 'window' }).then((clientList) => {
-                  for (const client of clientList) {
-                    if (client.url.includes(self.location.origin) && 'focus' in client) {
-                      return client.focus();
-                    }
-                  }
-                  if (clients.openWindow) {
-                    return clients.openWindow('/');
-                  }
-                })
-              );
-            });
-            
-            self.addEventListener('notificationclose', (event) => {
-              console.log('Notification closed:', event.notification.tag);
-            });
-          `
-
-          const blob = new Blob([swCode], { type: "application/javascript" })
-          const swUrl = URL.createObjectURL(blob)
-
-          const registration = await navigator.serviceWorker.register(swUrl)
-          addDebug("Inline service worker registered successfully")
-
-          // Clean up blob URL
-          URL.revokeObjectURL(swUrl)
-        } catch (error) {
-          addDebug(`Service worker registration failed: ${error.message}`)
-          // Continue without service worker - notifications can still work
-        }
       }
     }
 
@@ -184,6 +203,12 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       return
     }
 
+    if (!serviceWorkerReady) {
+      setLastError("Service Worker not ready. Please refresh the app.")
+      addDebug("Attempted to request permission without service worker")
+      return
+    }
+
     try {
       setLastError(null)
       addDebug("Requesting notification permission...")
@@ -195,29 +220,22 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
 
       if (result === "granted") {
         setNotificationsEnabled(true)
-        addDebug("Permission granted, sending welcome notification")
+        addDebug("Permission granted, sending welcome notification via Service Worker")
 
-        // Send immediate welcome notification
-        const welcomeNotification = new Notification("🎉 Notifications Enabled!", {
-          body: "You'll now receive reminders for bills and goals. This notification proves it's working!",
-          icon: "/placeholder-logo.png",
-          badge: "/placeholder-logo.png",
+        // Send welcome notification using Service Worker (REQUIRED for PWA)
+        await sendServiceWorkerNotification({
+          title: "🎉 PWA Notifications Enabled!",
+          body: "Perfect! Your Poco F6 will now receive notifications even when the app is closed. This proves it's working!",
           tag: "welcome",
           requireInteraction: true,
           vibrate: [200, 100, 200, 100, 200],
           data: { type: "welcome", timestamp: Date.now() },
         })
 
-        welcomeNotification.onclick = () => {
-          window.focus()
-          welcomeNotification.close()
-        }
-
-        setLastNotificationSent("Welcome notification sent!")
-        setNotificationCount((prev) => prev + 1)
-        addDebug("Welcome notification created successfully")
+        setLastNotificationSent("Welcome notification sent via Service Worker!")
+        addDebug("Welcome notification sent successfully")
       } else if (result === "denied") {
-        setLastError("Notifications were denied. Please enable them in your browser settings.")
+        setLastError("Notifications were denied. Please enable them in your device settings.")
         addDebug("Permission denied by user")
       } else {
         setLastError("Notification permission was not granted")
@@ -230,7 +248,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     }
   }
 
-  const sendDirectNotification = async (options: {
+  const sendServiceWorkerNotification = async (options: {
     title: string
     body: string
     tag?: string
@@ -247,8 +265,14 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       return false
     }
 
+    if (!serviceWorkerReady || !registration) {
+      setLastError("Service Worker not ready. Please refresh the app.")
+      addDebug("Attempted to send notification without service worker")
+      return false
+    }
+
     try {
-      addDebug(`Sending notification: ${options.title}`)
+      addDebug(`Sending SW notification: ${options.title}`)
 
       const notificationOptions = {
         body: options.body,
@@ -259,56 +283,41 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
         silent: options.silent || false,
         vibrate: options.vibrate || [200, 100, 200],
         data: options.data || {},
+        actions: [
+          {
+            action: "open",
+            title: "Open App",
+            icon: "/placeholder-logo.png",
+          },
+          {
+            action: "dismiss",
+            title: "Dismiss",
+            icon: "/placeholder-logo.png",
+          },
+        ],
       }
 
-      // Try service worker first, then fallback to direct notification
-      try {
-        if ("serviceWorker" in navigator) {
-          const registration = await navigator.serviceWorker.ready
-          await registration.showNotification(options.title, notificationOptions)
-          addDebug("Service worker notification sent successfully")
-        } else {
-          throw new Error("Service worker not available")
-        }
-      } catch (swError) {
-        addDebug(`Service worker failed, using direct notification: ${swError.message}`)
-
-        // Fallback to direct notification
-        const notification = new Notification(options.title, notificationOptions)
-
-        notification.onclick = () => {
-          window.focus()
-          notification.close()
-          addDebug("Notification clicked")
-        }
-
-        notification.onshow = () => {
-          addDebug("Notification shown successfully")
-        }
-
-        notification.onerror = (error) => {
-          addDebug(`Notification error: ${error}`)
-        }
-      }
+      // Use Service Worker registration to show notification (REQUIRED for PWA)
+      await registration.showNotification(options.title, notificationOptions)
 
       setNotificationCount((prev) => prev + 1)
       setLastNotificationSent(`"${options.title}" sent at ${new Date().toLocaleTimeString()}`)
       setLastError(null)
-      addDebug("Notification sent successfully")
+      addDebug("Service Worker notification sent successfully")
       return true
     } catch (error) {
-      console.error("Error sending notification:", error)
+      console.error("Error sending Service Worker notification:", error)
       setLastError(`Failed to send notification: ${error.message}`)
-      addDebug(`Notification failed: ${error.message}`)
+      addDebug(`SW Notification failed: ${error.message}`)
       return false
     }
   }
 
   const sendTestNotification = async () => {
     addDebug("Test notification requested")
-    const success = await sendDirectNotification({
-      title: "🧪 Test Notification - Budget Tracker",
-      body: "SUCCESS! If you see this notification on your phone, everything is working perfectly! 🎉",
+    const success = await sendServiceWorkerNotification({
+      title: "🧪 PWA Test - Budget Tracker",
+      body: "SUCCESS! 🎉 Your Poco F6 PWA notifications are working perfectly! Check your notification panel.",
       tag: "test",
       requireInteraction: true,
       vibrate: [100, 50, 100, 50, 100, 50, 100],
@@ -329,7 +338,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     }
 
     const totalAmount = pendingBills.reduce((sum, bill) => sum + bill.amount, 0)
-    await sendDirectNotification({
+    await sendServiceWorkerNotification({
       title: "💳 Bill Reminder - Budget Tracker",
       body: `You have ${pendingBills.length} pending bill(s) totaling ${currency}${totalAmount.toLocaleString()}. Don't forget to pay them!`,
       tag: "bill-reminder",
@@ -350,7 +359,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     const progress = (todayData.amount / todayData.goal) * 100
     const remaining = todayData.goal - todayData.amount
 
-    await sendDirectNotification({
+    await sendServiceWorkerNotification({
       title: "🎯 Goal Reminder - Budget Tracker",
       body: `Today's progress: ${progress.toFixed(0)}%. You need ${currency}${remaining.toLocaleString()} more to reach your daily goal!`,
       tag: "goal-reminder",
@@ -361,20 +370,20 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
   }
 
   const sendUrgentAlert = async () => {
-    await sendDirectNotification({
-      title: "🚨 URGENT - Budget Tracker",
-      body: "This is an urgent test alert with maximum vibration and sound. You should definitely notice this!",
+    await sendServiceWorkerNotification({
+      title: "🚨 URGENT PWA TEST - Budget Tracker",
+      body: "MAXIMUM VIBRATION TEST! 📳 If you feel this vibration on your Poco F6, PWA notifications are working perfectly!",
       tag: "urgent-test",
       requireInteraction: true,
       silent: false,
-      vibrate: [300, 100, 300, 100, 300, 100, 300],
+      vibrate: [300, 100, 300, 100, 300, 100, 300, 100, 300],
       data: { type: "urgent", timestamp: Date.now() },
     })
   }
 
-  // Auto-send notifications based on data changes (simplified)
+  // Auto-send notifications based on data changes
   useEffect(() => {
-    if (!notificationsEnabled || permission !== "granted") return
+    if (!notificationsEnabled || permission !== "granted" || !serviceWorkerReady) return
 
     const checkAndSendNotifications = () => {
       const now = new Date()
@@ -382,14 +391,14 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       const currentMinute = now.getMinutes()
       const currentDay = now.toLocaleDateString("en-US", { weekday: "short" })
 
-      // Send notifications at specific times (every hour for testing)
+      // Send notifications at specific times
       if (currentMinute === 0 && settings.dailyReminders) {
         const todayData = dailyIncome.find((d) => d.day === currentDay)
         if (todayData?.isWorkDay && todayData.goal > 0) {
           const progress = (todayData.amount / todayData.goal) * 100
 
           if (progress < 50 && currentHour >= 12) {
-            sendDirectNotification({
+            sendServiceWorkerNotification({
               title: "⚡ Daily Goal Alert",
               body: `You're at ${progress.toFixed(0)}% of today's goal. Time to hustle! ${currency}${(todayData.goal - todayData.amount).toLocaleString()} to go.`,
               tag: "daily-alert",
@@ -404,7 +413,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
     // Check every minute
     const interval = setInterval(checkAndSendNotifications, 60000)
     return () => clearInterval(interval)
-  }, [notificationsEnabled, permission, settings, weeklyPayables, dailyIncome, currency])
+  }, [notificationsEnabled, permission, serviceWorkerReady, settings, weeklyPayables, dailyIncome, currency])
 
   // Calculate current stats
   const pendingBills = weeklyPayables.filter((p) => p.status === "pending")
@@ -413,13 +422,30 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
 
   return (
     <div className="space-y-4">
+      {/* PWA Status */}
+      {isPWA && (
+        <Card className="bg-green-50 border-green-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-green-800 text-sm flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              PWA Mode Detected ✅
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-green-700">
+              Great! You're using the installed PWA version. Notifications will work even when the app is closed.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Debug Info */}
       {debugInfo.length > 0 && (
         <Card className="bg-gray-50 border-gray-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-gray-800 text-sm flex items-center gap-2">
               <Wifi className="w-4 h-4" />
-              Debug Log {isOnline ? "🟢" : "🔴"}
+              Debug Log {isOnline ? "🟢" : "🔴"} {isPWA ? "📱PWA" : "🌐Web"}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -448,6 +474,14 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           </CardHeader>
           <CardContent>
             <p className="text-sm text-red-700 mb-3">{lastError}</p>
+            {lastError.includes("Service Worker") && (
+              <div className="text-xs text-red-600 bg-white p-2 rounded mb-3">
+                <p className="font-medium">Try these fixes:</p>
+                <p>1. Close and reopen the PWA app</p>
+                <p>2. Restart your phone</p>
+                <p>3. Uninstall and reinstall the PWA</p>
+              </div>
+            )}
             <Button onClick={() => setLastError(null)} variant="outline" size="sm" className="bg-white hover:bg-red-50">
               Dismiss
             </Button>
@@ -466,7 +500,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
           </CardHeader>
           <CardContent>
             <p className="text-sm text-green-700 mb-3">{lastNotificationSent}</p>
-            <p className="text-xs text-green-600 mb-3">Check your phone's notification panel!</p>
+            <p className="text-xs text-green-600 mb-3">Check your Poco F6's notification panel!</p>
             <Button
               onClick={() => setLastNotificationSent(null)}
               variant="outline"
@@ -488,17 +522,35 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             ) : (
               <BellOff className="w-5 h-5 text-gray-400" />
             )}
-            Push Notifications
+            PWA Push Notifications
             <div className="flex gap-2 ml-auto">
-              {isSupported && <Badge className="bg-green-100 text-green-800 text-xs">Supported</Badge>}
+              {serviceWorkerReady && <Badge className="bg-green-100 text-green-800 text-xs">SW Ready</Badge>}
               {notificationCount > 0 && (
                 <Badge className="bg-blue-100 text-blue-800 text-xs">{notificationCount} sent</Badge>
               )}
             </div>
           </CardTitle>
-          <CardDescription>Get real-time alerts on your Poco F6 for bills, goals, and reminders</CardDescription>
+          <CardDescription>Get real-time alerts on your Poco F6 PWA for bills, goals, and reminders</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Service Worker Status */}
+          <div
+            className={`p-3 rounded-lg border ${
+              serviceWorkerReady ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm font-medium">
+                {serviceWorkerReady ? "✅ Service Worker Ready" : "⚠️ Service Worker Not Ready"}
+              </span>
+            </div>
+            <p className="text-xs text-gray-600">
+              {serviceWorkerReady
+                ? "PWA notifications are ready to work"
+                : "Service Worker is required for PWA notifications"}
+            </p>
+          </div>
+
           {/* Permission Status */}
           <div
             className={`p-4 rounded-lg border-2 ${
@@ -517,7 +569,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
                     ? "❌ Notifications Blocked"
                     : "⚠️ Notifications Not Set Up"}
               </span>
-              {permission === "granted" && (
+              {permission === "granted" && serviceWorkerReady && (
                 <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
               )}
             </div>
@@ -525,57 +577,60 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
             {permission === "default" && (
               <div className="space-y-3">
                 <p className="text-sm text-blue-700">
-                  <strong>📱 For Poco F6:</strong> Enable notifications to receive alerts even when the app is closed.
+                  <strong>📱 For Poco F6 PWA:</strong> Enable notifications to receive alerts even when the app is
+                  closed.
                 </p>
-                <Button onClick={requestPermission} className="w-full bg-blue-600 hover:bg-blue-700">
+                <Button
+                  onClick={requestPermission}
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  disabled={!serviceWorkerReady}
+                >
                   <Bell className="w-4 h-4 mr-2" />
-                  Enable Push Notifications
+                  Enable PWA Push Notifications
                 </Button>
+                {!serviceWorkerReady && (
+                  <p className="text-xs text-orange-600">Please wait for Service Worker to be ready...</p>
+                )}
               </div>
             )}
 
             {permission === "denied" && (
               <div className="space-y-3">
                 <p className="text-sm text-red-700 mb-2">
-                  <strong>Notifications are blocked.</strong> To enable on your Poco F6:
+                  <strong>Notifications are blocked.</strong> To enable on your Poco F6 PWA:
                 </p>
                 <div className="text-xs text-red-600 space-y-2 bg-white p-3 rounded">
                   <div>
-                    <p className="font-medium">📱 Poco F6 Chrome Steps:</p>
-                    <p>1. Tap the ⋮ menu (3 dots) in Chrome</p>
-                    <p>2. Tap "Site settings" or "Permissions"</p>
-                    <p>3. Tap "Notifications" → "Allow"</p>
-                    <p>4. Refresh this page</p>
+                    <p className="font-medium">📱 Poco F6 PWA Settings:</p>
+                    <p>1. Go to Android Settings → Apps</p>
+                    <p>2. Find "Budget Tracker" (the PWA app)</p>
+                    <p>3. Tap "Notifications" → Enable all</p>
+                    <p>4. Make sure "Show on lock screen" is ON</p>
                   </div>
                   <div>
-                    <p className="font-medium">📱 Alternative Method:</p>
-                    <p>1. Long press on this browser tab</p>
-                    <p>2. Tap "Site settings"</p>
-                    <p>3. Enable "Notifications"</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">⚙️ MIUI Settings:</p>
-                    <p>1. Settings → Apps → Chrome</p>
-                    <p>2. Notifications → Allow all</p>
-                    <p>3. Make sure "Show on lock screen" is enabled</p>
+                    <p className="font-medium">🔄 Alternative:</p>
+                    <p>1. Uninstall the PWA from your home screen</p>
+                    <p>2. Open in Chrome browser</p>
+                    <p>3. Allow notifications when prompted</p>
+                    <p>4. Reinstall as PWA</p>
                   </div>
                 </div>
                 <Button onClick={() => window.location.reload()} variant="outline" className="w-full">
-                  Refresh Page to Try Again
+                  Refresh App to Try Again
                 </Button>
               </div>
             )}
           </div>
 
           {/* Test Notifications */}
-          {permission === "granted" && (
+          {permission === "granted" && serviceWorkerReady && (
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-2">
                 <Button
                   onClick={sendTestNotification}
                   className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
                 >
-                  <Send className="w-4 h-4 mr-2" />🧪 Send Test Notification (Check Your Phone!)
+                  <Send className="w-4 h-4 mr-2" />🧪 Send PWA Test Notification
                 </Button>
 
                 <Button
@@ -602,7 +657,7 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       </Card>
 
       {/* Notification Types Settings */}
-      {permission === "granted" && notificationsEnabled && (
+      {permission === "granted" && notificationsEnabled && serviceWorkerReady && (
         <Card className="bg-white/90 border-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
@@ -746,34 +801,35 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
         </CardContent>
       </Card>
 
-      {/* Poco F6 Specific Instructions */}
+      {/* PWA Troubleshooting */}
       <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
         <CardHeader className="pb-3">
           <CardTitle className="text-purple-800 text-sm flex items-center gap-2">
-            <Smartphone className="w-4 h-4" />📱 Poco F6 Setup Guide
+            <Smartphone className="w-4 h-4" />📱 Poco F6 PWA Troubleshooting
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-xs text-purple-700 space-y-3">
             <div className="bg-white p-3 rounded border">
-              <p className="font-medium mb-2">🔧 MIUI Notification Settings:</p>
-              <p>• Settings → Apps → Chrome → Notifications → Allow all</p>
-              <p>• Settings → Notifications → Advanced → Show on lock screen ✓</p>
-              <p>• Settings → Battery → Chrome → No restrictions</p>
+              <p className="font-medium mb-2">🔧 If notifications don't work:</p>
+              <p>1. Android Settings → Apps → Budget Tracker → Notifications → Enable all</p>
+              <p>2. Make sure "Show on lock screen" is ON</p>
+              <p>3. Battery optimization: Settings → Battery → App battery usage → Budget Tracker → No restrictions</p>
             </div>
 
             <div className="bg-white p-3 rounded border">
-              <p className="font-medium mb-2">🌐 Chrome Settings:</p>
-              <p>• Chrome → ⋮ → Settings → Site settings → Notifications → Allow</p>
-              <p>• Make sure "Blocked" list doesn't include this site</p>
+              <p className="font-medium mb-2">🔄 Reset PWA:</p>
+              <p>1. Long press the app icon → App info → Storage → Clear data</p>
+              <p>2. Or uninstall PWA and reinstall from Chrome</p>
+              <p>3. Make sure to allow notifications when prompted</p>
             </div>
 
             <div className="bg-white p-3 rounded border">
-              <p className="font-medium mb-2">📲 Testing Tips:</p>
-              <p>• Use "Send Test Notification" button above</p>
+              <p className="font-medium mb-2">📲 Testing:</p>
+              <p>• Use "Send PWA Test Notification" button above</p>
               <p>• Check notification panel by swiping down</p>
               <p>• Try "URGENT Alert" for maximum vibration</p>
-              <p>• Keep this browser tab open in background</p>
+              <p>• Notifications should work even when app is closed</p>
             </div>
           </div>
         </CardContent>
@@ -782,12 +838,12 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
       {/* Device Info */}
       <Card className="bg-gray-50 border-gray-200">
         <CardHeader className="pb-2">
-          <CardTitle className="text-gray-800 text-sm">Device Information</CardTitle>
+          <CardTitle className="text-gray-800 text-sm">PWA Information</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-xs text-gray-600 space-y-1">
             <p>
-              <strong>Browser:</strong> {navigator.userAgent.includes("Chrome") ? "Chrome" : "Other"}
+              <strong>Mode:</strong> {isPWA ? "PWA (Installed App)" : "Web Browser"}
             </p>
             <p>
               <strong>Platform:</strong> {navigator.platform}
@@ -802,7 +858,10 @@ export default function NotificationManager({ weeklyPayables, dailyIncome, curre
               <strong>Permission:</strong> {permission}
             </p>
             <p>
-              <strong>Service Worker:</strong> {"serviceWorker" in navigator ? "Supported" : "Not Supported"}
+              <strong>Service Worker:</strong> {serviceWorkerReady ? "Ready" : "Not Ready"}
+            </p>
+            <p>
+              <strong>User Agent:</strong> {navigator.userAgent.includes("wv") ? "WebView (PWA)" : "Browser"}
             </p>
           </div>
         </CardContent>

@@ -1,7 +1,7 @@
 {
-  "name": "Daily Budget Tracker v81",
-  "short_name": "Budget v81",
-  "description": "Track your daily income, expenses, and bills with real push notifications",
+  "name": "Daily Budget Tracker v82",
+  "short_name": "Budget v82",
+  "description": "Track your daily income, expenses, and bills with PWA push notifications",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#6366f1",

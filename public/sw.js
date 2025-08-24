@@ -1,5 +1,5 @@
-const CACHE_NAME = "budget-tracker-v81"
-const APP_VERSION = "v81"
+const CACHE_NAME = "budget-tracker-v82"
+const APP_VERSION = "v82"
 const urlsToCache = ["/", "/offline.html", "/manifest.json", "/placeholder-logo.png", "/favicon.ico"]
 
 // Install event - cache resources
@@ -91,9 +91,9 @@ self.addEventListener("fetch", (event) => {
   )
 })
 
-// Enhanced notification handling with better error handling and mobile support
+// Enhanced notification handling for PWA with better error handling
 self.addEventListener("notificationclick", (event) => {
-  console.log("Notification clicked:", event.notification.tag)
+  console.log("PWA Notification clicked:", event.notification.tag)
 
   event.notification.close()
 
@@ -109,17 +109,19 @@ self.addEventListener("notificationclick", (event) => {
       .then((clientList) => {
         // Handle different actions
         if (action === "dismiss") {
+          console.log("Notification dismissed by user")
           return Promise.resolve()
         }
 
-        // If app is already open, focus it
+        // If PWA is already open, focus it
         for (const client of clientList) {
           if (client.url.includes(self.location.origin) && "focus" in client) {
+            console.log("Focusing existing PWA window")
             return client.focus()
           }
         }
 
-        // Otherwise open new window
+        // Otherwise open new PWA window
         if (clients.openWindow) {
           let url = "/"
 
@@ -130,33 +132,34 @@ self.addEventListener("notificationclick", (event) => {
             url = "/?tab=income"
           }
 
+          console.log("Opening new PWA window:", url)
           return clients.openWindow(url)
         }
       })
       .catch((error) => {
-        console.error("Error handling notification click:", error)
+        console.error("Error handling PWA notification click:", error)
       }),
   )
 })
 
 // Handle notification close
 self.addEventListener("notificationclose", (event) => {
-  console.log("Notification closed:", event.notification.tag)
+  console.log("PWA Notification closed:", event.notification.tag)
 
-  // Track notification dismissals
+  // Track notification dismissals for PWA
   const notificationData = event.notification.data || {}
   if (notificationData.type) {
-    console.log(`Notification dismissed: ${notificationData.type}`)
+    console.log(`PWA Notification dismissed: ${notificationData.type}`)
   }
 })
 
-// Enhanced message handler for communication with main app
+// Enhanced message handler for PWA communication
 self.addEventListener("message", (event) => {
   const { type, data } = event.data || {}
 
   switch (type) {
     case "SKIP_WAITING":
-      console.log("User confirmed update, activating new version")
+      console.log("PWA User confirmed update, activating new version")
       self.skipWaiting()
       break
 
@@ -175,15 +178,15 @@ self.addEventListener("message", (event) => {
       break
 
     case "SEND_NOTIFICATION":
-      // Handle notification requests from main app with enhanced error handling
+      // Handle notification requests from PWA with enhanced error handling
       if (data && data.title && data.body) {
         const notificationOptions = {
           body: data.body,
           icon: data.icon || "/placeholder-logo.png",
           badge: data.badge || "/placeholder-logo.png",
-          tag: data.tag || "app-notification",
+          tag: data.tag || "pwa-notification",
           vibrate: data.vibrate || [200, 100, 200],
-          requireInteraction: data.requireInteraction || false,
+          requireInteraction: data.requireInteraction || true,
           silent: data.silent || false,
           data: data.data || {},
           actions: [
@@ -203,8 +206,8 @@ self.addEventListener("message", (event) => {
         self.registration
           .showNotification(data.title, notificationOptions)
           .then(() => {
-            console.log("Notification sent successfully:", data.title)
-            // Send success message back to main app
+            console.log("PWA Notification sent successfully:", data.title)
+            // Send success message back to PWA
             self.clients.matchAll().then((clients) => {
               clients.forEach((client) => {
                 client.postMessage({
@@ -215,8 +218,8 @@ self.addEventListener("message", (event) => {
             })
           })
           .catch((error) => {
-            console.error("Error sending notification:", error)
-            // Send error back to main app
+            console.error("Error sending PWA notification:", error)
+            // Send error back to PWA
             self.clients.matchAll().then((clients) => {
               clients.forEach((client) => {
                 client.postMessage({
@@ -230,29 +233,29 @@ self.addEventListener("message", (event) => {
       break
 
     case "SCHEDULE_NOTIFICATION":
-      // Handle scheduled notifications (for future implementation)
-      console.log("Scheduled notification request received:", data)
+      // Handle scheduled notifications for PWA
+      console.log("PWA Scheduled notification request received:", data)
       break
   }
 })
 
-// Enhanced push notification handler with better mobile support
+// Enhanced push notification handler for PWA
 self.addEventListener("push", (event) => {
-  console.log("Push message received")
+  console.log("PWA Push message received")
 
   let notificationData = {
-    title: "Budget Tracker",
+    title: "Budget Tracker PWA",
     body: "You have a new update!",
     icon: "/placeholder-logo.png",
     badge: "/placeholder-logo.png",
-    tag: "push-notification",
+    tag: "pwa-push-notification",
   }
 
   if (event.data) {
     try {
       notificationData = event.data.json()
     } catch (error) {
-      console.error("Error parsing push data:", error)
+      console.error("Error parsing PWA push data:", error)
     }
   }
 
@@ -261,8 +264,8 @@ self.addEventListener("push", (event) => {
     icon: notificationData.icon,
     badge: notificationData.badge,
     tag: notificationData.tag,
-    vibrate: [100, 50, 100],
-    requireInteraction: true, // Better for mobile
+    vibrate: [200, 100, 200, 100, 200],
+    requireInteraction: true, // Important for PWA
     data: notificationData.data || {},
     actions: [
       {
@@ -280,22 +283,22 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     self.registration.showNotification(notificationData.title, options).catch((error) => {
-      console.error("Error showing push notification:", error)
+      console.error("Error showing PWA push notification:", error)
     }),
   )
 })
 
-// Handle app installation with enhanced notification
+// Handle PWA installation with enhanced notification
 self.addEventListener("appinstalled", (event) => {
-  console.log("PWA was installed")
+  console.log("PWA was installed successfully")
 
-  // Show enhanced welcome notification
+  // Show enhanced welcome notification for PWA
   self.registration
-    .showNotification("Budget Tracker Installed! 🎉", {
-      body: "Your budget tracker is now installed and ready to use offline! You'll receive notifications even when the app is closed.",
+    .showNotification("Budget Tracker PWA Installed! 🎉", {
+      body: "Your budget tracker PWA is now installed! You'll receive notifications even when the app is closed.",
       icon: "/placeholder-logo.png",
       badge: "/placeholder-logo.png",
-      tag: "app-installed",
+      tag: "pwa-installed",
       requireInteraction: true,
       vibrate: [200, 100, 200, 100, 200],
       data: {
@@ -311,24 +314,24 @@ self.addEventListener("appinstalled", (event) => {
       ],
     })
     .catch((error) => {
-      console.error("Error showing installation notification:", error)
+      console.error("Error showing PWA installation notification:", error)
     })
 })
 
-// Background sync for offline notifications (future enhancement)
+// Background sync for PWA offline notifications
 self.addEventListener("sync", (event) => {
   if (event.tag === "background-sync") {
-    console.log("Background sync triggered")
+    console.log("PWA Background sync triggered")
     // Handle background sync for notifications when back online
   }
 })
 
-// Periodic background sync for scheduled notifications (future enhancement)
+// Periodic background sync for PWA scheduled notifications
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "daily-reminders") {
-    console.log("Periodic sync triggered for daily reminders")
-    // Handle periodic notifications
+    console.log("PWA Periodic sync triggered for daily reminders")
+    // Handle periodic notifications for PWA
   }
 })
 
-console.log(`Service Worker ${APP_VERSION} loaded successfully with enhanced notification support`)
+console.log(`Service Worker ${APP_VERSION} loaded successfully with PWA notification support`)
