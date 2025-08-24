@@ -140,6 +140,9 @@ const defaultTransactions = [
   },
 ]
 
+// Default expense categories
+const defaultExpenseCategories = ["Food", "Transport", "Bills", "Entertainment", "Shopping", "Other"]
+
 // Initialize daily income with current week dates and updated goals
 const initializeDailyIncome = () => {
   const weekDays = getCurrentWeekDays()
@@ -195,6 +198,7 @@ export default function BudgetingApp() {
   const [weeklyPayables, setWeeklyPayables] = useState(defaultWeeklyPayables)
   const [transactions, setTransactions] = useState(defaultTransactions)
   const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
+  const [expenseCategories, setExpenseCategories] = useState(defaultExpenseCategories)
 
   // Set client-side flag and initialize time
   useEffect(() => {
@@ -246,6 +250,16 @@ export default function BudgetingApp() {
         console.error("Error loading saved data:", error)
       }
     }
+
+    // Load expense categories
+    const savedExpenseCategories = safeLocalStorage.getItem("expenseCategories")
+    if (savedExpenseCategories) {
+      try {
+        setExpenseCategories(JSON.parse(savedExpenseCategories))
+      } catch (error) {
+        console.error("Error loading expense categories:", error)
+      }
+    }
   }, [isClient])
 
   // Save data to localStorage whenever state changes (client-side only)
@@ -261,6 +275,12 @@ export default function BudgetingApp() {
     }
     safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
   }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
+
+  // Save expense categories separately
+  useEffect(() => {
+    if (!isClient) return
+    safeLocalStorage.setItem("expenseCategories", JSON.stringify(expenseCategories))
+  }, [expenseCategories, isClient])
 
   // Real-time calculations with safe defaults
   const currency = dashboardData?.currency || "₱"
@@ -400,6 +420,7 @@ export default function BudgetingApp() {
       safeLocalStorage.removeItem("monthlyPayables")
       safeLocalStorage.removeItem("biweeklyPayables")
       safeLocalStorage.removeItem("weeklyPayablesHistory")
+      safeLocalStorage.removeItem("expenseCategories")
 
       // Reset all state to empty/default values
       setDashboardData({
@@ -412,6 +433,7 @@ export default function BudgetingApp() {
       setBudgetCategories([])
       setWeeklyPayables([])
       setTransactions([])
+      setExpenseCategories(defaultExpenseCategories)
 
       // Reset daily income to zero amounts but keep structure
       const resetDailyIncome = initializeDailyIncome().map((day) => ({
@@ -471,7 +493,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v80</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v81</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -838,6 +860,7 @@ export default function BudgetingApp() {
             }
           }}
           budgetCategories={budgetCategories}
+          expenseCategories={expenseCategories}
           currency={currency}
           defaultDescription="work" // Set default description to "work"
         />
@@ -855,6 +878,8 @@ export default function BudgetingApp() {
           setTransactions={setTransactions}
           dailyIncome={dailyIncome}
           setDailyIncome={setDailyIncome}
+          expenseCategories={expenseCategories}
+          setExpenseCategories={setExpenseCategories}
           currency={currency}
           clearAllData={clearAllData}
         />

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, DollarSign, TrendingDown, CreditCard, Check } from "lucide-react"
 
 interface Transaction {
@@ -33,6 +34,7 @@ interface QuickAddDialogProps {
   initialTab?: "income" | "expense" | "bills" | null
   onPayBill: (billName: string, amount: number) => void
   onAddTransaction: (transaction: Transaction) => void
+  budgetCategories: any[]
 }
 
 export function QuickAddDialog({
@@ -44,20 +46,20 @@ export function QuickAddDialog({
   initialTab,
   onPayBill,
   onAddTransaction,
+  budgetCategories,
 }: QuickAddDialogProps) {
   const [activeTab, setActiveTab] = useState(initialTab || "income")
   const [formData, setFormData] = useState({
-    description: "",
     amount: "",
     category: "",
     date: new Date().toISOString().split("T")[0],
   })
 
   const handleSubmit = (type: "income" | "expense") => {
-    if (!formData.description || !formData.amount) return
+    if (!formData.amount) return
 
     const transaction: Transaction = {
-      description: formData.description,
+      description: type === "income" ? "work" : formData.category || "Other", // Default description for income is "work"
       amount: Number.parseFloat(formData.amount),
       type,
       category: formData.category || (type === "income" ? "Work" : "Other"),
@@ -66,7 +68,6 @@ export function QuickAddDialog({
 
     onAddTransaction(transaction)
     setFormData({
-      description: "",
       amount: "",
       category: "",
       date: new Date().toISOString().split("T")[0],
@@ -85,6 +86,13 @@ export function QuickAddDialog({
   }
 
   const pendingPayables = weeklyPayables.filter((p) => p.status === "pending")
+
+  // Get categories for dropdowns
+  const incomeCategories = ["Work", "Freelance", "Business", "Investment", "Other"]
+  const expenseCategories =
+    budgetCategories.length > 0
+      ? budgetCategories.map((cat) => cat.name)
+      : ["Food", "Transport", "Bills", "Entertainment", "Shopping", "Other"]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,17 +123,6 @@ export function QuickAddDialog({
           <TabsContent value="income" className="space-y-4">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="income-description">Description</Label>
-                <Input
-                  id="income-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Daily work earnings"
-                  className="bg-white"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="income-amount">Amount ({currency})</Label>
                 <Input
                   id="income-amount"
@@ -137,30 +134,38 @@ export function QuickAddDialog({
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="income-category">Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {incomeCategories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Button
                 onClick={() => handleSubmit("income")}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600"
-                disabled={!formData.description || !formData.amount}
+                disabled={!formData.amount}
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Add Income
+                Add Income (Default: work)
               </Button>
             </div>
           </TabsContent>
 
           <TabsContent value="expense" className="space-y-4">
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="expense-description">Description</Label>
-                <Input
-                  id="expense-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Lunch, transport, etc."
-                  className="bg-white"
-                />
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="expense-amount">Amount ({currency})</Label>
                 <Input
@@ -173,10 +178,29 @@ export function QuickAddDialog({
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="expense-category">Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {expenseCategories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Button
                 onClick={() => handleSubmit("expense")}
                 className="w-full bg-gradient-to-r from-red-500 to-pink-600"
-                disabled={!formData.description || !formData.amount}
+                disabled={!formData.amount}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Expense

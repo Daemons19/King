@@ -1,35 +1,30 @@
 "use client"
 
-import { CardDescription } from "@/components/ui/card"
-
 import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
 import {
+  Settings,
+  DollarSign,
+  Target,
+  Calendar,
+  Database,
   Trash2,
   Plus,
-  AlertTriangle,
-  Copy,
-  Calendar,
-  Edit2,
-  Check,
+  Edit,
+  Save,
   X,
-  History,
-  TrendingUp,
-  TrendingDown,
-  Target,
-  DollarSign,
+  AlertTriangle,
 } from "lucide-react"
-import { BiweeklyScheduler } from "./biweekly-scheduler"
-import { AppUpdateManager } from "./app-update-manager"
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Safe localStorage access
 const safeLocalStorage = {
@@ -49,6 +44,18 @@ const safeLocalStorage = {
       localStorage.removeItem(key)
     }
   },
+}
+
+// Safe number formatting function
+const safeToFixed = (value: any, decimals = 2): string => {
+  const num = Number(value)
+  return isNaN(num) ? "0.00" : num.toFixed(decimals)
+}
+
+// Safe number conversion
+const safeNumber = (value: any): number => {
+  const num = Number(value)
+  return isNaN(num) ? 0 : num
 }
 
 // Helper functions
@@ -196,44 +203,58 @@ const calculateWeekSummary = (
   const weekEnd = new Date(endStr)
 
   // Filter transactions for this week
-  const weekTransactions = transactions.filter((t) => {
-    const transactionDate = new Date(t.date)
-    return transactionDate >= weekStart && transactionDate <= weekEnd
-  })
+  const weekTransactions = Array.isArray(transactions)
+    ? transactions.filter((t) => {
+        if (!t || !t.date) return false
+        const transactionDate = new Date(t.date)
+        return transactionDate >= weekStart && transactionDate <= weekEnd
+      })
+    : []
 
-  // Calculate totals
-  const totalIncome = weekTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+  // Calculate totals with safe number handling
+  const totalIncome = weekTransactions
+    .filter((t) => t && t.type === "income")
+    .reduce((sum, t) => sum + safeNumber(t.amount), 0)
 
   const totalExpenses = weekTransactions
-    .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+    .filter((t) => t && t.type === "expense")
+    .reduce((sum, t) => sum + Math.abs(safeNumber(t.amount)), 0)
 
-  // Calculate category spending for this week
-  const categorySpending = budgetCategories.map((category) => {
-    const spent = weekTransactions
-      .filter((t) => t.type === "expense" && t.category === category.name)
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+  // Calculate category spending for this week with safe handling
+  const categorySpending = Array.isArray(budgetCategories)
+    ? budgetCategories.map((category) => {
+        if (!category) return { weeklySpent: 0, weeklyProgress: 0 }
 
-    return {
-      ...category,
-      weeklySpent: spent,
-      weeklyProgress: category.budgeted > 0 ? (spent / category.budgeted) * 100 : 0,
-    }
-  })
+        const spent = weekTransactions
+          .filter((t) => t && t.type === "expense" && t.category === category.name)
+          .reduce((sum, t) => sum + Math.abs(safeNumber(t.amount)), 0)
+
+        const budgeted = safeNumber(category.budgeted)
+        const weeklyProgress = budgeted > 0 ? (spent / budgeted) * 100 : 0
+
+        return {
+          ...category,
+          weeklySpent: spent,
+          weeklyProgress: safeNumber(weeklyProgress),
+        }
+      })
+    : []
 
   // Calculate payables for this week (if available in history)
   const weeklyPayablesHistory = JSON.parse(safeLocalStorage.getItem("weeklyPayablesHistory") || "[]")
-  const weekHistory = weeklyPayablesHistory.find((w: any) => w.weekRange === weekRange)
+  const weekHistory = Array.isArray(weeklyPayablesHistory)
+    ? weeklyPayablesHistory.find((w: any) => w && w.weekRange === weekRange)
+    : null
 
   let totalPayables = 0
   let paidPayables = 0
   let unpaidPayables = 0
 
-  if (weekHistory) {
-    totalPayables = weekHistory.payables.reduce((sum: number, p: any) => sum + p.amount, 0)
+  if (weekHistory && Array.isArray(weekHistory.payables)) {
+    totalPayables = weekHistory.payables.reduce((sum: number, p: any) => sum + safeNumber(p?.amount), 0)
     paidPayables = weekHistory.payables
-      .filter((p: any) => p.status === "paid")
-      .reduce((sum: number, p: any) => sum + p.amount, 0)
+      .filter((p: any) => p && p.status === "paid")
+      .reduce((sum: number, p: any) => sum + safeNumber(p?.amount), 0)
     unpaidPayables = totalPayables - paidPayables
   }
 
@@ -242,8 +263,8 @@ const calculateWeekSummary = (
   for (let d = new Date(weekStart); d <= weekEnd; d.setDate(d.getDate() + 1)) {
     const dayStr = d.toLocaleDateString("en-US", { weekday: "short" })
     const dayIncome = weekTransactions
-      .filter((t) => t.type === "income" && new Date(t.date).toDateString() === d.toDateString())
-      .reduce((sum, t) => sum + t.amount, 0)
+      .filter((t) => t && t.type === "income" && new Date(t.date || "").toDateString() === d.toDateString())
+      .reduce((sum, t) => sum + safeNumber(t.amount), 0)
 
     weekDays.push({
       day: dayStr,
@@ -253,21 +274,21 @@ const calculateWeekSummary = (
     })
   }
 
-  const totalGoal = weekDays.reduce((sum, day) => sum + day.goal, 0)
+  const totalGoal = weekDays.reduce((sum, day) => sum + safeNumber(day.goal), 0)
   const goalAchievement = totalGoal > 0 ? (totalIncome / totalGoal) * 100 : 0
 
   return {
     weekRange,
-    totalIncome,
-    totalExpenses,
-    totalPayables,
-    paidPayables,
-    unpaidPayables,
-    netSavings: totalIncome - totalExpenses - paidPayables,
+    totalIncome: safeNumber(totalIncome),
+    totalExpenses: safeNumber(totalExpenses),
+    totalPayables: safeNumber(totalPayables),
+    paidPayables: safeNumber(paidPayables),
+    unpaidPayables: safeNumber(unpaidPayables),
+    netSavings: safeNumber(totalIncome - totalExpenses - paidPayables),
     categorySpending,
     weekDays,
-    totalGoal,
-    goalAchievement,
+    totalGoal: safeNumber(totalGoal),
+    goalAchievement: safeNumber(goalAchievement),
     transactionCount: weekTransactions.length,
   }
 }
@@ -284,7 +305,9 @@ interface SettingsDialogProps {
   transactions: any[]
   setTransactions: (transactions: any[]) => void
   dailyIncome: any[]
-  setDailyIncome: (data: any[]) => void
+  setDailyIncome: (income: any[]) => void
+  expenseCategories: string[]
+  setExpenseCategories: (categories: string[]) => void
   currency: string
   clearAllData: () => void
 }
@@ -298,11 +321,73 @@ export function SettingsDialog({
   setBudgetCategories,
   weeklyPayables,
   setWeeklyPayables,
+  transactions,
+  setTransactions,
   dailyIncome,
   setDailyIncome,
+  expenseCategories,
+  setExpenseCategories,
   currency,
   clearAllData,
 }: SettingsDialogProps) {
+  const [activeTab, setActiveTab] = useState("general")
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [editingCategoryName, setEditingCategoryName] = useState<string | null>(null)
+  const [editingCategoryValue, setEditingCategoryValue] = useState("")
+
+  // Handle adding new expense category
+  const handleAddExpenseCategory = () => {
+    if (newCategoryName.trim() && !expenseCategories.includes(newCategoryName.trim())) {
+      setExpenseCategories([...expenseCategories, newCategoryName.trim()])
+      setNewCategoryName("")
+    }
+  }
+
+  // Handle editing expense category
+  const handleEditExpenseCategory = (oldName: string) => {
+    setEditingCategoryName(oldName)
+    setEditingCategoryValue(oldName)
+  }
+
+  // Handle saving edited category
+  const handleSaveExpenseCategory = () => {
+    if (editingCategoryName && editingCategoryValue.trim() && editingCategoryValue !== editingCategoryName) {
+      const updatedCategories = expenseCategories.map((cat) =>
+        cat === editingCategoryName ? editingCategoryValue.trim() : cat,
+      )
+      setExpenseCategories(updatedCategories)
+    }
+    setEditingCategoryName(null)
+    setEditingCategoryValue("")
+  }
+
+  // Handle deleting expense category
+  const handleDeleteExpenseCategory = (categoryName: string) => {
+    if (window.confirm(`Delete category "${categoryName}"?`)) {
+      setExpenseCategories(expenseCategories.filter((cat) => cat !== categoryName))
+    }
+  }
+
+  // Handle workday toggle
+  const handleWorkdayToggle = (dayIndex: number) => {
+    if (!Array.isArray(dailyIncome) || !dailyIncome[dayIndex]) return
+
+    const updatedIncome = [...dailyIncome]
+    const day = updatedIncome[dayIndex]
+    day.isWorkDay = !day.isWorkDay
+    day.goal = day.isWorkDay ? 1100 : 0 // Set goal based on workday status
+    setDailyIncome(updatedIncome)
+  }
+
+  // Handle goal change
+  const handleGoalChange = (dayIndex: number, newGoal: number) => {
+    if (!Array.isArray(dailyIncome) || !dailyIncome[dayIndex]) return
+
+    const updatedIncome = [...dailyIncome]
+    updatedIncome[dayIndex].goal = safeNumber(newGoal)
+    setDailyIncome(updatedIncome)
+  }
+
   const [newPayable, setNewPayable] = useState({
     name: "",
     amount: "",
@@ -320,6 +405,13 @@ export function SettingsDialog({
   const [previousWeeks, setPreviousWeeks] = useState<any[]>([])
   const [selectedWeekSummary, setSelectedWeekSummary] = useState<any>(null)
 
+  // Category management state
+  const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
+  const [editCategoryValue, setEditCategoryValue] = useState("")
+
+  const [newCategory, setNewCategory] = useState({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  const [editingBudgetCategory, setEditingBudgetCategory] = useState<any>(null)
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = safeLocalStorage.getItem("monthlyPayables")
@@ -332,7 +424,7 @@ export function SettingsDialog({
             const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
             setMonthlyPayables({ [currentMonthKey]: parsed })
           } else {
-            setMonthlyPayables(parsed)
+            setMonthlyPayables(parsed || {})
           }
         } catch {
           setMonthlyPayables({})
@@ -347,33 +439,21 @@ export function SettingsDialog({
     setPreviousWeeks(weeks)
   }, [])
 
-  const [newMonthlyPayable, setNewMonthlyPayable] = useState({
-    name: "",
-    amount: "",
-    date: "",
-    dueDay: "Saturday", // Changed default to Saturday
-    week: "Week 1",
-    frequency: "monthly",
-    paidCount: 0,
-  })
-
-  const [editingMonthlyPayable, setEditingMonthlyPayable] = useState<number | null>(null)
-  const [editMonthlyPayableData, setEditMonthlyPayableData] = useState<any>({})
-
   const handleDateChange = (date: string) => {
     if (date) {
+      const currentMonthInfo = getCurrentMonthInfo()
       const detectedWeek = getWeekForDate(date, currentMonthInfo.year, currentMonthInfo.month)
       const detectedDay = getDayNameFromDate(date)
 
-      setNewMonthlyPayable({
-        ...newMonthlyPayable,
+      setNewPayable({
+        ...newPayable,
         date: date,
         week: detectedWeek,
         dueDay: detectedDay,
       })
     } else {
-      setNewMonthlyPayable({
-        ...newMonthlyPayable,
+      setNewPayable({
+        ...newPayable,
         date: "",
         week: "Week 1",
         dueDay: "Saturday", // Changed default to Saturday
@@ -390,6 +470,8 @@ export function SettingsDialog({
   }
 
   const updateDailyIncome = (index: number, field: string, value: number | boolean) => {
+    if (!Array.isArray(dailyIncome) || !dailyIncome[index]) return
+
     const updated = [...dailyIncome]
     if (field === "isWorkDay") {
       // When workday status changes, update the goal accordingly
@@ -405,24 +487,58 @@ export function SettingsDialog({
   }
 
   const updateAllDailyGoals = (newGoal: number) => {
+    if (!Array.isArray(dailyIncome)) return
+
     const updated = dailyIncome.map((day) => ({
       ...day,
-      goal: day.isWorkDay ? newGoal : 0, // Only set goal for workdays
+      goal: day?.isWorkDay ? safeNumber(newGoal) : 0, // Only set goal for workdays
     }))
     setDailyIncome(updated)
+  }
+
+  // Category management functions
+  const startEditingCategory = (index: number) => {
+    if (!Array.isArray(expenseCategories) || !expenseCategories[index]) return
+
+    setEditingCategoryIndex(index)
+    setEditCategoryValue(expenseCategories[index])
+  }
+
+  const saveEditCategory = () => {
+    if (editCategoryValue.trim() && editingCategoryIndex !== null && Array.isArray(expenseCategories)) {
+      const updated = [...expenseCategories]
+      updated[editingCategoryIndex] = editCategoryValue.trim()
+      setExpenseCategories(updated)
+      safeLocalStorage.setItem("expenseCategories", JSON.stringify(updated))
+      setEditingCategoryIndex(null)
+      setEditCategoryValue("")
+    }
+  }
+
+  const cancelEditCategory = () => {
+    setEditingCategoryIndex(null)
+    setEditCategoryValue("")
+  }
+
+  const removeExpenseCategory = (index: number) => {
+    if (!Array.isArray(expenseCategories)) return
+
+    const updated = expenseCategories.filter((_, i) => i !== index)
+    setExpenseCategories(updated)
+    safeLocalStorage.setItem("expenseCategories", JSON.stringify(updated))
   }
 
   // Weekly payables functions
   const addPayable = () => {
     if (newPayable.name && newPayable.amount) {
       const newId = Date.now()
-      const autoColor = getAutoColor(weeklyPayables.length)
+      const autoColor = getAutoColor(Array.isArray(weeklyPayables) ? weeklyPayables.length : 0)
 
       setWeeklyPayables([
-        ...weeklyPayables,
+        ...(Array.isArray(weeklyPayables) ? weeklyPayables : []),
         {
           ...newPayable,
-          amount: Number.parseFloat(newPayable.amount) || 0,
+          amount: safeNumber(newPayable.amount),
           id: newId,
           paidCount: 0,
           color: autoColor,
@@ -441,13 +557,16 @@ export function SettingsDialog({
   }
 
   const startEditingPayable = (payable: any) => {
+    if (!payable) return
     setEditingPayable(payable.id)
     setEditPayableData({ ...payable })
   }
 
   const saveEditPayable = () => {
+    if (!Array.isArray(weeklyPayables)) return
+
     const updated = weeklyPayables.map((p) =>
-      p.id === editingPayable ? { ...editPayableData, amount: Number.parseFloat(editPayableData.amount) || 0 } : p,
+      p && p.id === editingPayable ? { ...editPayableData, amount: safeNumber(editPayableData.amount) } : p,
     )
     setWeeklyPayables(updated)
     setEditingPayable(null)
@@ -460,13 +579,16 @@ export function SettingsDialog({
   }
 
   const removePayable = (id: number) => {
-    setWeeklyPayables(weeklyPayables.filter((p) => p.id !== id))
+    if (!Array.isArray(weeklyPayables)) return
+    setWeeklyPayables(weeklyPayables.filter((p) => p && p.id !== id))
   }
 
   const markPayableAsPaid = (id: number) => {
+    if (!Array.isArray(weeklyPayables)) return
+
     const updated = weeklyPayables.map((payable) => {
-      if (payable.id === id) {
-        const newPaidCount = (payable.paidCount || 0) + 1
+      if (payable && payable.id === id) {
+        const newPaidCount = safeNumber(payable.paidCount) + 1
         let newStatus = "paid"
 
         // Smart completion logic with bi-weekly scheduling
@@ -492,171 +614,6 @@ export function SettingsDialog({
     setWeeklyPayables(updated)
   }
 
-  // Monthly payables functions
-  const addMonthlyPayable = () => {
-    if (newMonthlyPayable.name && newMonthlyPayable.amount && newMonthlyPayable.date) {
-      const updated = { ...monthlyPayables }
-      if (!updated[currentMonthKey]) {
-        updated[currentMonthKey] = []
-      }
-      const newId = Date.now()
-      const autoColor = getAutoColor(updated[currentMonthKey].length)
-
-      updated[currentMonthKey].push({
-        ...newMonthlyPayable,
-        amount: Number.parseFloat(newMonthlyPayable.amount) || 0,
-        id: newId,
-        month: currentMonthInfo.monthName,
-        year: currentMonthInfo.year,
-        paidCount: 0,
-        color: autoColor,
-      })
-      setMonthlyPayables(updated)
-      safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
-      setNewMonthlyPayable({
-        name: "",
-        amount: "",
-        date: "",
-        dueDay: "Saturday", // Changed default to Saturday
-        week: "Week 1",
-        frequency: "monthly",
-        paidCount: 0,
-      })
-    }
-  }
-
-  const startEditingMonthlyPayable = (payable: any) => {
-    setEditingMonthlyPayable(payable.id)
-    setEditMonthlyPayableData({ ...payable })
-  }
-
-  const saveEditMonthlyPayable = () => {
-    const updated = { ...monthlyPayables }
-    updated[currentMonthKey] = updated[currentMonthKey].map((p: any) =>
-      p.id === editingMonthlyPayable
-        ? { ...editMonthlyPayableData, amount: Number.parseFloat(editMonthlyPayableData.amount) || 0 }
-        : p,
-    )
-    setMonthlyPayables(updated)
-    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
-    setEditingMonthlyPayable(null)
-    setEditMonthlyPayableData({})
-  }
-
-  const cancelEditMonthlyPayable = () => {
-    setEditingMonthlyPayable(null)
-    setEditMonthlyPayableData({})
-  }
-
-  const removeMonthlyPayable = (id: number) => {
-    const updated = { ...monthlyPayables }
-    updated[currentMonthKey] = updated[currentMonthKey].filter((p: any) => p.id !== id)
-    setMonthlyPayables(updated)
-    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
-  }
-
-  const copyToNextMonth = () => {
-    if (currentMonthPayables.length === 0) {
-      alert("No monthly payables to copy!")
-      return
-    }
-
-    const nextMonth = currentMonthInfo.month === 11 ? 0 : currentMonthInfo.month + 1
-    const nextYear = currentMonthInfo.month === 11 ? currentMonthInfo.year + 1 : currentMonthInfo.year
-    const nextMonthKey = `${nextYear}-${nextMonth}`
-    const nextMonthName = new Date(nextYear, nextMonth).toLocaleString("default", { month: "long" })
-
-    const updated = { ...monthlyPayables }
-    updated[nextMonthKey] = currentMonthPayables.map((payable: any, index: number) => ({
-      ...payable,
-      id: Date.now() + Math.random(),
-      month: nextMonthName,
-      year: nextYear,
-      paidCount: 0,
-      color: getAutoColor(index),
-    }))
-
-    setMonthlyPayables(updated)
-    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updated))
-    alert(`Copied ${currentMonthPayables.length} payables to ${nextMonthName} ${nextYear}!`)
-  }
-
-  const applyMonthlyPayablesToWeekly = () => {
-    if (currentMonthPayables.length === 0) {
-      alert("No monthly payables to apply!")
-      return
-    }
-
-    // Replace existing weekly payables with monthly ones
-    const newWeeklyPayables = currentMonthPayables.map((payable: any, index: number) => ({
-      id: Date.now() + Math.random(),
-      name: payable.name,
-      amount: payable.amount,
-      dueDay: payable.dueDay,
-      status: "pending",
-      week: "This Week", // Show all monthly payables as "This Week" so they're visible
-      frequency: payable.frequency || "monthly",
-      paidCount: 0,
-      color: getAutoColor(index),
-    }))
-
-    setWeeklyPayables(newWeeklyPayables)
-    alert(`Applied ${currentMonthPayables.length} monthly payables to weekly view!`)
-  }
-
-  const [newCategory, setNewCategory] = useState({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  const [editingCategory, setEditingCategory] = useState<any>(null)
-
-  // Budget Categories
-  const handleAddCategory = () => {
-    if (!newCategory.name || !newCategory.budgeted) return
-
-    const category = {
-      id: Date.now(),
-      name: newCategory.name,
-      budgeted: Number.parseFloat(newCategory.budgeted),
-      spent: 0,
-      color: newCategory.color,
-    }
-
-    setBudgetCategories([...budgetCategories, category])
-    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  }
-
-  const handleEditCategory = (category: any) => {
-    setEditingCategory(category)
-    setNewCategory({
-      name: category.name,
-      budgeted: category.budgeted.toString(),
-      color: category.color,
-    })
-  }
-
-  const handleUpdateCategory = () => {
-    if (!newCategory.name || !newCategory.budgeted || !editingCategory) return
-
-    const updatedCategories = budgetCategories.map((cat) =>
-      cat.id === editingCategory.id
-        ? {
-            ...cat,
-            name: newCategory.name,
-            budgeted: Number.parseFloat(newCategory.budgeted),
-            color: newCategory.color,
-          }
-        : cat,
-    )
-
-    setBudgetCategories(updatedCategories)
-    setEditingCategory(null)
-    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  }
-
-  const handleDeleteCategory = (categoryId: number) => {
-    if (typeof window !== "undefined" && window.confirm("Delete this category?")) {
-      setBudgetCategories(budgetCategories.filter((cat) => cat.id !== categoryId))
-    }
-  }
-
   const colorOptions = [
     { value: "from-red-500 to-pink-500", label: "Red to Pink" },
     { value: "from-blue-500 to-indigo-500", label: "Blue to Indigo" },
@@ -668,809 +625,472 @@ export function SettingsDialog({
 
   // Generate week summary when selected
   const handleWeekSelect = (weekRange: string) => {
-    const summary = calculateWeekSummary(weekRange, [], dailyIncome, weeklyPayables, budgetCategories)
+    const summary = calculateWeekSummary(
+      weekRange,
+      transactions || [],
+      dailyIncome || [],
+      weeklyPayables || [],
+      budgetCategories || [],
+    )
     setSelectedWeekSummary(summary)
   }
 
+  // Budget Categories
+  const handleAddBudgetCategory = () => {
+    if (!newCategory.name || !newCategory.budgeted) return
+
+    const category = {
+      id: Date.now(),
+      name: newCategory.name,
+      budgeted: safeNumber(newCategory.budgeted),
+      spent: 0,
+      color: newCategory.color,
+    }
+
+    setBudgetCategories([...(Array.isArray(budgetCategories) ? budgetCategories : []), category])
+    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  }
+
+  const handleEditBudgetCategory = (category: any) => {
+    if (!category) return
+    setEditingBudgetCategory(category)
+    setNewCategory({
+      name: category.name || "",
+      budgeted: (category.budgeted || 0).toString(),
+      color: category.color || "from-blue-500 to-indigo-500",
+    })
+  }
+
+  const handleUpdateBudgetCategory = () => {
+    if (!newCategory.name || !newCategory.budgeted || !editingBudgetCategory) return
+    if (!Array.isArray(budgetCategories)) return
+
+    const updatedCategories = budgetCategories.map((cat) =>
+      cat && cat.id === editingBudgetCategory.id
+        ? {
+            ...cat,
+            name: newCategory.name,
+            budgeted: safeNumber(newCategory.budgeted),
+            color: newCategory.color,
+          }
+        : cat,
+    )
+
+    setBudgetCategories(updatedCategories)
+    setEditingBudgetCategory(null)
+    setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+  }
+
+  const handleDeleteBudgetCategory = (categoryId: number) => {
+    if (typeof window !== "undefined" && window.confirm("Delete this category?")) {
+      if (!Array.isArray(budgetCategories)) return
+      setBudgetCategories(budgetCategories.filter((cat) => cat && cat.id !== categoryId))
+    }
+  }
+
+  // Safe data access with defaults
+  const safeDashboardData = dashboardData || {}
+  const safeBudgetCategories = Array.isArray(budgetCategories) ? budgetCategories : []
+  const safeWeeklyPayables = Array.isArray(weeklyPayables) ? weeklyPayables : []
+  const safeTransactions = Array.isArray(transactions) ? transactions : []
+  const safeDailyIncome = Array.isArray(dailyIncome) ? dailyIncome : []
+  const safeExpenseCategories = Array.isArray(expenseCategories) ? expenseCategories : []
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md mx-4 max-h-[85vh] overflow-y-auto bg-gradient-to-br from-white to-purple-50">
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-hidden">
         <DialogHeader>
-          <DialogTitle className="text-xl bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5" />
             Settings
           </DialogTitle>
-          <DialogDescription>Manage your budget settings</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-purple-100 p-1 rounded-lg">
-            <TabsTrigger value="general" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
-              General
-            </TabsTrigger>
-            <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
-              Income
-            </TabsTrigger>
-            <TabsTrigger value="payables" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
-              Payables
-            </TabsTrigger>
-            <TabsTrigger value="biweekly" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
-              Biweekly
-            </TabsTrigger>
-            <TabsTrigger value="data" className="data-[state=active]:bg-white rounded-md text-xs px-2 py-2">
-              Data
-            </TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="goals">Goals</TabsTrigger>
+            <TabsTrigger value="workdays">Workdays</TabsTrigger>
+            <TabsTrigger value="data">Data</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="general" className="space-y-4">
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800">Basic Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+          <div className="overflow-y-auto max-h-[60vh] mt-4">
+            <TabsContent value="general" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Currency & Balance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Currency</Label>
-                    <Select
-                      value={dashboardData.currency}
-                      onValueChange={(value) => updateDashboardData("currency", value)}
-                    >
-                      <SelectTrigger className="bg-white h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="₱">₱ Peso</SelectItem>
-                        <SelectItem value="$">$ Dollar</SelectItem>
-                        <SelectItem value="€">€ Euro</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="currency">Currency Symbol</Label>
+                    <Input
+                      id="currency"
+                      value={safeDashboardData.currency || "₱"}
+                      onChange={(e) =>
+                        setDashboardData({
+                          ...safeDashboardData,
+                          currency: e.target.value,
+                        })
+                      }
+                      placeholder="₱"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label>Daily Goal</Label>
+                    <Label htmlFor="balance">Current Balance</Label>
                     <Input
+                      id="balance"
                       type="number"
-                      value={dashboardData.dailyIncomeGoal || ""}
-                      onChange={(e) => {
-                        const newGoal = Number.parseFloat(e.target.value) || 0
-                        updateDashboardData("dailyIncomeGoal", newGoal)
-                        updateAllDailyGoals(newGoal)
-                      }}
-                      className="bg-white h-10 placeholder:text-gray-400"
-                      placeholder="800"
+                      value={safeDashboardData.totalBalance || 0}
+                      onChange={(e) =>
+                        setDashboardData({
+                          ...safeDashboardData,
+                          totalBalance: safeNumber(e.target.value),
+                        })
+                      }
+                      placeholder="0.00"
                     />
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                <div className="space-y-2">
-                  <Label>Current Balance</Label>
-                  <Input
-                    type="number"
-                    value={dashboardData.totalBalance || ""}
-                    onChange={(e) => updateDashboardData("totalBalance", Number.parseFloat(e.target.value) || 0)}
-                    className="bg-white h-10 placeholder:text-gray-400"
-                    placeholder="Enter balance"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Simplified Budget Categories */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800">Budget Categories</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {budgetCategories.map((category, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                    <Input
-                      value={category.name}
-                      onChange={(e) => {
-                        const updated = [...budgetCategories]
-                        updated[index] = { ...updated[index], name: e.target.value }
-                        setBudgetCategories(updated)
-                      }}
-                      className="bg-white h-8 text-sm placeholder:text-gray-400 flex-1"
-                      placeholder="Category"
-                    />
-                    <Input
-                      type="number"
-                      value={category.budgeted || ""}
-                      onChange={(e) => {
-                        const updated = [...budgetCategories]
-                        updated[index] = { ...updated[index], budgeted: Number.parseFloat(e.target.value) || 0 }
-                        setBudgetCategories(updated)
-                      }}
-                      className="bg-white h-8 text-sm placeholder:text-gray-400 w-20"
-                      placeholder="Budget"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setBudgetCategories(budgetCategories.filter((_, i) => i !== index))}
-                      className="h-8 w-8 p-0"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                ))}
-
-                <Button
-                  onClick={() =>
-                    setBudgetCategories([
-                      ...budgetCategories,
-                      {
-                        name: "",
-                        budgeted: 0,
-                        spent: 0,
-                        color: getAutoColor(budgetCategories.length),
-                        id: Date.now(),
-                      },
-                    ])
-                  }
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Category
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="income" className="space-y-4">
-            {/* Work Days This Week with Checkmarks */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800">Work Days This Week</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-1">
-                  {dailyIncome.map((day, index) => (
-                    <div key={index} className="text-center">
-                      <div className="text-xs text-gray-600 mb-1">{day.day}</div>
-                      <Checkbox
-                        checked={day.isWorkDay}
-                        onCheckedChange={(checked) => updateDailyIncome(index, "isWorkDay", checked)}
-                        className="mx-auto"
-                      />
-                      {day.isToday && <div className="text-xs text-purple-600 mt-1">Today</div>}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="payables" className="space-y-4">
-            {/* Weekly Payables */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800">Weekly Bills (Default: Saturday)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {weeklyPayables.map((payable) => (
-                  <div key={payable.id}>
-                    {editingPayable === payable.id ? (
-                      <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border">
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            value={editPayableData.name || ""}
-                            onChange={(e) => setEditPayableData({ ...editPayableData, name: e.target.value })}
-                            className="bg-white h-9 placeholder:text-gray-400"
-                            placeholder="Bill name"
-                          />
-                          <Input
-                            type="number"
-                            value={editPayableData.amount || ""}
-                            onChange={(e) => setEditPayableData({ ...editPayableData, amount: e.target.value })}
-                            className="bg-white h-9 placeholder:text-gray-400"
-                            placeholder="Amount"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Select
-                            value={editPayableData.dueDay || "Saturday"}
-                            onValueChange={(value) => setEditPayableData({ ...editPayableData, dueDay: value })}
-                          >
-                            <SelectTrigger className="bg-white h-9">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Monday">Monday</SelectItem>
-                              <SelectItem value="Tuesday">Tuesday</SelectItem>
-                              <SelectItem value="Wednesday">Wednesday</SelectItem>
-                              <SelectItem value="Thursday">Thursday</SelectItem>
-                              <SelectItem value="Friday">Friday</SelectItem>
-                              <SelectItem value="Saturday">Saturday (Default)</SelectItem>
-                              <SelectItem value="Sunday">Sunday</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select
-                            value={editPayableData.frequency || "weekly"}
-                            onValueChange={(value) => setEditPayableData({ ...editPayableData, frequency: value })}
-                          >
-                            <SelectTrigger className="bg-white h-9">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="weekly">Weekly</SelectItem>
-                              <SelectItem value="monthly">Monthly</SelectItem>
-                              <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button onClick={saveEditPayable} size="sm" className="flex-1 bg-green-600">
-                            <Check className="w-4 h-4 mr-2" />
-                            Save
-                          </Button>
-                          <Button
-                            onClick={cancelEditPayable}
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 bg-transparent"
-                          >
-                            <X className="w-4 h-4 mr-2" />
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className={`flex items-center justify-between p-3 rounded-lg bg-gradient-to-r ${payable.color || getAutoColor(0)} bg-opacity-10 border`}
-                      >
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-800">{payable.name}</div>
-                          <div className="text-sm text-gray-600">
-                            {currency}
-                            {payable.amount.toLocaleString()} • {payable.dueDay}
+            <TabsContent value="goals" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Target className="w-4 h-4" />
+                    Daily Income Goals
+                  </CardTitle>
+                  <CardDescription>Set individual daily goals for each day of the week</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {safeDailyIncome.map((day, index) => {
+                      if (!day) return null
+                      return (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium w-12">{day.day || "N/A"}</span>
+                            {day.isToday && <Badge variant="secondary">Today</Badge>}
+                            {!day.isWorkDay && <Badge variant="outline">Rest Day</Badge>}
                           </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              {payable.frequency === "twice-monthly" ? "Bi-Weekly" : payable.frequency}
-                            </Badge>
-                            {payable.frequency === "twice-monthly" && (
-                              <span className="text-xs text-gray-500">{payable.paidCount || 0}/2</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {payable.status === "pending" ? (
-                            <Button
-                              size="sm"
-                              onClick={() => markPayableAsPaid(payable.id)}
-                              className="bg-green-600 hover:bg-green-700 h-8 px-3"
-                            >
-                              Pay
-                            </Button>
-                          ) : (
-                            <Badge
-                              className={`${
-                                payable.status === "completed"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-green-100 text-green-800"
-                              }`}
-                            >
-                              {payable.status === "completed" ? "Done" : "Paid"}
-                            </Badge>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => startEditingPayable(payable)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removePayable(payable.id)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {/* Add new payable */}
-                <div className="space-y-2 p-3 border-2 border-dashed border-orange-300 rounded-lg">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={newPayable.name}
-                      onChange={(e) => setNewPayable({ ...newPayable, name: e.target.value })}
-                      placeholder="Bill name"
-                      className="bg-white h-9 placeholder:text-gray-400"
-                    />
-                    <Input
-                      type="number"
-                      value={newPayable.amount}
-                      onChange={(e) => setNewPayable({ ...newPayable, amount: e.target.value })}
-                      placeholder="Amount"
-                      className="bg-white h-9 placeholder:text-gray-400"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select
-                      value={newPayable.dueDay}
-                      onChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
-                    >
-                      <SelectTrigger className="bg-white h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Monday">Monday</SelectItem>
-                        <SelectItem value="Tuesday">Tuesday</SelectItem>
-                        <SelectItem value="Wednesday">Wednesday</SelectItem>
-                        <SelectItem value="Thursday">Thursday</SelectItem>
-                        <SelectItem value="Friday">Friday</SelectItem>
-                        <SelectItem value="Saturday">Saturday (Default)</SelectItem>
-                        <SelectItem value="Sunday">Sunday</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={newPayable.frequency}
-                      onChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
-                    >
-                      <SelectTrigger className="bg-white h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={addPayable} className="w-full bg-gradient-to-r from-orange-600 to-red-600">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Bill (Default: Saturday)
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Monthly Payables */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                  Monthly Setup - {currentMonthInfo.monthName}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={copyToNextMonth}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-transparent"
-                    disabled={currentMonthPayables.length === 0}
-                  >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copy Next
-                  </Button>
-                  <Button
-                    onClick={applyMonthlyPayablesToWeekly}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-transparent"
-                    disabled={currentMonthPayables.length === 0}
-                  >
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Apply Weekly
-                  </Button>
-                </div>
-
-                {/* Current Monthly Payables */}
-                <div className="space-y-2">
-                  {currentMonthPayables.map((payable: any) => (
-                    <div key={payable.id}>
-                      {editingMonthlyPayable === payable.id ? (
-                        <div className="space-y-2 p-3 bg-yellow-50 rounded-lg border">
-                          <div className="grid grid-cols-2 gap-2">
-                            <Input
-                              value={editMonthlyPayableData.name || ""}
-                              onChange={(e) =>
-                                setEditMonthlyPayableData({ ...editMonthlyPayableData, name: e.target.value })
-                              }
-                              className="bg-white h-9 placeholder:text-gray-400"
-                              placeholder="Name"
-                            />
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600">{currency}</span>
                             <Input
                               type="number"
-                              value={editMonthlyPayableData.amount || ""}
-                              onChange={(e) =>
-                                setEditMonthlyPayableData({ ...editMonthlyPayableData, amount: e.target.value })
-                              }
-                              className="bg-white h-9 placeholder:text-gray-400"
-                              placeholder="Amount"
+                              value={safeNumber(day.goal)}
+                              onChange={(e) => handleGoalChange(index, safeNumber(e.target.value))}
+                              className="w-20 h-8"
+                              disabled={!day.isWorkDay}
                             />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Input
-                              type="date"
-                              value={editMonthlyPayableData.date || ""}
-                              onChange={(e) => {
-                                const newDate = e.target.value
-                                const detectedWeek = getWeekForDate(
-                                  newDate,
-                                  currentMonthInfo.year,
-                                  currentMonthInfo.month,
-                                )
-                                const detectedDay = getDayNameFromDate(newDate)
-                                setEditMonthlyPayableData({
-                                  ...editMonthlyPayableData,
-                                  date: newDate,
-                                  week: detectedWeek,
-                                  dueDay: detectedDay,
-                                })
-                              }}
-                              className="bg-white h-9"
-                            />
-                            <Select
-                              value={editMonthlyPayableData.frequency || "monthly"}
-                              onChange={(value) =>
-                                setEditMonthlyPayableData({ ...editMonthlyPayableData, frequency: value })
-                              }
-                            >
-                              <SelectTrigger className="bg-white h-9">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="monthly">Monthly</SelectItem>
-                                <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button onClick={saveEditMonthlyPayable} size="sm" className="flex-1 bg-green-600">
-                              <Check className="w-4 h-4 mr-2" />
-                              Save
-                            </Button>
-                            <Button
-                              onClick={cancelEditMonthlyPayable}
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 bg-transparent"
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              Cancel
-                            </Button>
-                          </div>
                         </div>
-                      ) : (
-                        <div
-                          className={`flex items-center justify-between p-3 rounded-lg bg-gradient-to-r ${payable.color || getAutoColor(0)} bg-opacity-10 border`}
-                        >
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-800">{payable.name}</div>
-                            <div className="text-sm text-gray-600">
-                              {currency}
-                              {payable.amount.toLocaleString()} • {payable.dueDay} • {payable.week}
-                            </div>
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {payable.frequency === "twice-monthly" ? "Bi-Weekly" : "Monthly"}
-                            </Badge>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => startEditingMonthlyPayable(payable)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeMonthlyPayable(payable.id)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                  {currentMonthPayables.length === 0 && (
-                    <div className="text-center py-6 text-gray-500">
-                      <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">No monthly payables set</p>
+            <TabsContent value="workdays" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Work Days Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Toggle which days are work days (goals will be set to 0 for non-work days)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {safeDailyIncome.map((day, index) => {
+                      if (!day) return null
+                      return (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium w-12">{day.day || "N/A"}</span>
+                            {day.isToday && <Badge variant="secondary">Today</Badge>}
+                            <span className="text-sm text-gray-600">
+                              Goal: {currency}
+                              {safeNumber(day.goal).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor={`workday-${index}`} className="text-sm">
+                              Work Day
+                            </Label>
+                            <Switch
+                              id={`workday-${index}`}
+                              checked={Boolean(day.isWorkDay)}
+                              onCheckedChange={() => handleWorkdayToggle(index)}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="data" className="space-y-4">
+              {/* Expense Categories Management */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="w-4 h-4" />
+                    Expense Categories
+                  </CardTitle>
+                  <CardDescription>Manage your expense categories for quick transaction entry</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Add new category */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="New category name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyPress={(e) => e.key === "Enter" && handleAddExpenseCategory()}
+                    />
+                    <Button onClick={handleAddExpenseCategory} size="sm" disabled={!newCategoryName.trim()}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Category list */}
+                  <div className="space-y-2">
+                    {safeExpenseCategories.map((category, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                        {editingCategoryName === category ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <Input
+                              value={editingCategoryValue}
+                              onChange={(e) => setEditingCategoryValue(e.target.value)}
+                              className="h-8"
+                              onKeyPress={(e) => e.key === "Enter" && handleSaveExpenseCategory()}
+                            />
+                            <Button onClick={handleSaveExpenseCategory} size="sm" variant="outline">
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                setEditingCategoryName(null)
+                                setEditingCategoryValue("")
+                              }}
+                              size="sm"
+                              variant="outline"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-medium">{category}</span>
+                            <div className="flex gap-1">
+                              <Button onClick={() => handleEditExpenseCategory(category)} size="sm" variant="ghost">
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                onClick={() => handleDeleteExpenseCategory(category)}
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {safeExpenseCategories.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No expense categories yet.</p>
+                      <p className="text-sm">Add categories above to organize your expenses.</p>
                     </div>
                   )}
-                </div>
+                </CardContent>
+              </Card>
 
-                {/* Add New Monthly Payable */}
-                <div className="space-y-2 p-3 border-2 border-dashed border-blue-300 rounded-lg">
-                  <div className="grid grid-cols-2 gap-2">
+              <Separator />
+
+              {/* Budget Categories Management */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">Budget Categories</CardTitle>
+                  <CardDescription>Manage your budget categories</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Add new category */}
+                  <div className="flex gap-2">
                     <Input
-                      value={newMonthlyPayable.name}
-                      onChange={(e) => setNewMonthlyPayable({ ...newMonthlyPayable, name: e.target.value })}
-                      placeholder="Bill name"
-                      className="bg-white h-9 placeholder:text-gray-400"
+                      placeholder="New category name"
+                      value={newCategory.name}
+                      onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
                     />
                     <Input
-                      type="number"
-                      value={newMonthlyPayable.amount}
-                      onChange={(e) => setNewMonthlyPayable({ ...newMonthlyPayable, amount: e.target.value })}
-                      placeholder="Amount"
-                      className="bg-white h-9 placeholder:text-gray-400"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="date"
-                      value={newMonthlyPayable.date}
-                      onChange={(e) => handleDateChange(e.target.value)}
-                      className="bg-white h-9"
+                      placeholder="Budgeted amount"
+                      value={newCategory.budgeted}
+                      onChange={(e) => setNewCategory({ ...newCategory, budgeted: e.target.value })}
                     />
                     <Select
-                      value={newMonthlyPayable.frequency}
-                      onChange={(value) => setNewMonthlyPayable({ ...newMonthlyPayable, frequency: value })}
+                      value={newCategory.color}
+                      onValueChange={(value) => setNewCategory({ ...newCategory, color: value })}
                     >
-                      <SelectTrigger className="bg-white h-9">
-                        <SelectValue />
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Select color" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="twice-monthly">Bi-Weekly</SelectItem>
+                        {colorOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
+                    <Button
+                      onClick={handleAddBudgetCategory}
+                      size="sm"
+                      disabled={!newCategory.name || !newCategory.budgeted}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <div className="text-xs text-gray-500 text-center">
-                    Auto-detects: {newMonthlyPayable.dueDay} • {newMonthlyPayable.week}
-                  </div>
-                  <Button
-                    onClick={addMonthlyPayable}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600"
-                    disabled={!newMonthlyPayable.name || !newMonthlyPayable.amount || !newMonthlyPayable.date}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Monthly Bill
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
-          <TabsContent value="biweekly" className="space-y-4">
-            <BiweeklyScheduler currency={currency} />
-          </TabsContent>
-
-          <TabsContent value="data" className="space-y-4">
-            {/* Previous Weeks Budget Audit */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800 flex items-center gap-2">
-                  <History className="w-5 h-5 text-blue-600" />
-                  Previous Weeks Budget Audit
-                </CardTitle>
-                <CardDescription>Review your budget performance from previous weeks</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Week Selection */}
-                <div className="space-y-2">
-                  <Label>Select Previous Week</Label>
-                  <Select onChange={handleWeekSelect}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Choose a week to audit..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {previousWeeks.map((week) => (
-                        <SelectItem key={week.key} value={week.range}>
-                          Week {week.weekNumber} ago - {week.range}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Week Summary Display */}
-                {selectedWeekSummary && (
-                  <div className="space-y-4">
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border">
-                      <h3 className="font-semibold text-gray-800 mb-3">
-                        Week Summary: {selectedWeekSummary.weekRange}
-                      </h3>
-
-                      {/* Key Metrics */}
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="bg-white p-3 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <TrendingUp className="w-4 h-4 text-green-600" />
-                            <span className="text-sm text-gray-600">Total Income</span>
-                          </div>
-                          <div className="text-lg font-bold text-green-600">
-                            {currency}
-                            {selectedWeekSummary.totalIncome.toLocaleString()}
-                          </div>
-                        </div>
-
-                        <div className="bg-white p-3 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <TrendingDown className="w-4 h-4 text-red-600" />
-                            <span className="text-sm text-gray-600">Total Expenses</span>
-                          </div>
-                          <div className="text-lg font-bold text-red-600">
-                            {currency}
-                            {selectedWeekSummary.totalExpenses.toLocaleString()}
-                          </div>
-                        </div>
-
-                        <div className="bg-white p-3 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Target className="w-4 h-4 text-blue-600" />
-                            <span className="text-sm text-gray-600">Goal Achievement</span>
-                          </div>
-                          <div className="text-lg font-bold text-blue-600">
-                            {selectedWeekSummary.goalAchievement.toFixed(1)}%
-                          </div>
-                        </div>
-
-                        <div className="bg-white p-3 rounded-lg">
-                          <div className="flex items-center gap-2 mb-1">
-                            <DollarSign className="w-4 h-4 text-purple-600" />
-                            <span className="text-sm text-gray-600">Net Savings</span>
-                          </div>
-                          <div
-                            className={`text-lg font-bold ${selectedWeekSummary.netSavings >= 0 ? "text-green-600" : "text-red-600"}`}
-                          >
-                            {currency}
-                            {selectedWeekSummary.netSavings.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Goal Progress */}
-                      <div className="bg-white p-3 rounded-lg mb-4">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-medium text-gray-700">Weekly Goal Progress</span>
-                          <span className="text-sm text-gray-600">
-                            {currency}
-                            {selectedWeekSummary.totalIncome.toLocaleString()} / {currency}
-                            {selectedWeekSummary.totalGoal.toLocaleString()}
-                          </span>
-                        </div>
-                        <Progress value={selectedWeekSummary.goalAchievement} className="h-2" />
-                      </div>
-
-                      {/* Daily Breakdown */}
-                      <div className="bg-white p-3 rounded-lg mb-4">
-                        <h4 className="font-medium text-gray-800 mb-2">Daily Income Breakdown</h4>
-                        <div className="space-y-2">
-                          {selectedWeekSummary.weekDays.map((day: any, index: number) => (
-                            <div key={index} className="flex justify-between items-center text-sm">
-                              <span className="text-gray-600">
-                                {day.day} ({day.date})
+                  {/* Category list */}
+                  <div className="space-y-2">
+                    {safeBudgetCategories.map((category, index) => {
+                      if (!category) return null
+                      return (
+                        <div
+                          key={category.id || index}
+                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                        >
+                          {editingBudgetCategory && editingBudgetCategory.id === category.id ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <Input
+                                value={newCategory.name}
+                                onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                                className="h-8"
+                              />
+                              <Input
+                                value={newCategory.budgeted}
+                                onChange={(e) => setNewCategory({ ...newCategory, budgeted: e.target.value })}
+                                className="h-8"
+                              />
+                              <Select
+                                value={newCategory.color}
+                                onValueChange={(value) => setNewCategory({ ...newCategory, color: value })}
+                              >
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue placeholder="Select color" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {colorOptions.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button onClick={handleUpdateBudgetCategory} size="sm" variant="outline">
+                                <Save className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setEditingBudgetCategory(null)
+                                  setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
+                                }}
+                                size="sm"
+                                variant="outline"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="font-medium">{category.name || "Unnamed"}</span>
+                              <span className="text-sm text-gray-600">
+                                Budgeted: {currency}
+                                {safeNumber(category.budgeted).toLocaleString()}
                               </span>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`font-medium ${day.income >= day.goal ? "text-green-600" : "text-red-600"}`}
+                              <span className="text-sm text-gray-600">
+                                Spent: {currency}
+                                {safeNumber(category.spent).toLocaleString()}
+                              </span>
+                              <div className="flex gap-1">
+                                <Button onClick={() => handleEditBudgetCategory(category)} size="sm" variant="ghost">
+                                  <Edit className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleDeleteBudgetCategory(category.id)}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-600 hover:text-red-700"
                                 >
-                                  {currency}
-                                  {day.income.toLocaleString()}
-                                </span>
-                                <span className="text-gray-400">
-                                  / {currency}
-                                  {day.goal.toLocaleString()}
-                                </span>
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
                               </div>
-                            </div>
-                          ))}
+                            </>
+                          )}
                         </div>
+                      )
+                    })}
+                  </div>
+
+                  {safeBudgetCategories.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No budget categories yet.</p>
+                      <p className="text-sm">Add categories above to organize your budget.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Separator />
+
+              {/* Data Management */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-4 h-4" />
+                    Data Management
+                  </CardTitle>
+                  <CardDescription>Manage your app data (use with caution)</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-red-800">Clear All Data</p>
+                        <p className="text-sm text-red-600">This will delete everything permanently</p>
                       </div>
-
-                      {/* Category Spending */}
-                      {selectedWeekSummary.categorySpending.length > 0 && (
-                        <div className="bg-white p-3 rounded-lg mb-4">
-                          <h4 className="font-medium text-gray-800 mb-2">Category Spending</h4>
-                          <div className="space-y-2">
-                            {selectedWeekSummary.categorySpending.map((category: any, index: number) => (
-                              <div key={index} className="space-y-1">
-                                <div className="flex justify-between items-center text-sm">
-                                  <span className="text-gray-600">{category.name}</span>
-                                  <span
-                                    className={`font-medium ${category.weeklySpent > category.budgeted ? "text-red-600" : "text-green-600"}`}
-                                  >
-                                    {currency}
-                                    {category.weeklySpent.toLocaleString()} / {currency}
-                                    {category.budgeted.toLocaleString()}
-                                  </span>
-                                </div>
-                                <Progress value={Math.min(category.weeklyProgress, 100)} className="h-1" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Payables Summary */}
-                      {selectedWeekSummary.totalPayables > 0 && (
-                        <div className="bg-white p-3 rounded-lg">
-                          <h4 className="font-medium text-gray-800 mb-2">Payables Summary</h4>
-                          <div className="grid grid-cols-3 gap-2 text-sm">
-                            <div className="text-center">
-                              <div className="text-gray-600">Total</div>
-                              <div className="font-medium">
-                                {currency}
-                                {selectedWeekSummary.totalPayables.toLocaleString()}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-gray-600">Paid</div>
-                              <div className="font-medium text-green-600">
-                                {currency}
-                                {selectedWeekSummary.paidPayables.toLocaleString()}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-gray-600">Unpaid</div>
-                              <div className="font-medium text-red-600">
-                                {currency}
-                                {selectedWeekSummary.unpaidPayables.toLocaleString()}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      <Button onClick={clearAllData} variant="destructive" size="sm">
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Clear All
+                      </Button>
                     </div>
                   </div>
-                )}
 
-                {!selectedWeekSummary && (
-                  <div className="text-center py-8 text-gray-500">
-                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>Select a previous week to view budget audit</p>
-                    <p className="text-sm">Review your income, expenses, and goal achievement</p>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    <p>Current data:</p>
+                    <p>• Transactions: {safeTransactions.length}</p>
+                    <p>• Budget Categories: {safeBudgetCategories.length}</p>
+                    <p>• Weekly Payables: {safeWeeklyPayables.length}</p>
+                    <p>• Expense Categories: {safeExpenseCategories.length}</p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Enhanced App Update Manager */}
-            <AppUpdateManager
-              onUpdateComplete={() => {
-                // Handle update completion
-                console.log("App update completed successfully!")
-              }}
-            />
-
-            {/* Clear Data Section */}
-            <Card className="bg-white/90 border-0">
-              <CardHeader>
-                <CardTitle className="text-gray-800 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                  Clear Data
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-sm text-red-600 mb-4">This will permanently delete all your data.</p>
-                  <Button onClick={clearAllData} variant="destructive" className="w-full">
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Clear All Data
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </div>
         </Tabs>
-
-        <div className="flex justify-end pt-4">
-          <Button
-            onClick={() => onOpenChange(false)}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-          >
-            Done
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   )

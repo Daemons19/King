@@ -1,21 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Wifi, WifiOff } from "lucide-react"
+import { WifiOff, Wifi, AlertCircle } from "lucide-react"
 
 export default function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(true)
   const [showIndicator, setShowIndicator] = useState(false)
 
   useEffect(() => {
-    // Set initial online status
+    // Check initial online status
     setIsOnline(navigator.onLine)
 
+    // Handle online/offline events
     const handleOnline = () => {
       setIsOnline(true)
       setShowIndicator(true)
-      // Hide the indicator after 3 seconds when coming back online
+      // Hide the indicator after 3 seconds when back online
       setTimeout(() => setShowIndicator(false), 3000)
     }
 
@@ -33,28 +35,40 @@ export default function OfflineIndicator() {
     }
   }, [])
 
-  // Always show when offline, show temporarily when coming back online
-  if (!showIndicator && isOnline) return null
+  // Don't show indicator if online and not recently changed
+  if (isOnline && !showIndicator) {
+    return null
+  }
 
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[10001]">
-      <Badge
-        className={`${
-          isOnline ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300"
-        } px-3 py-2 shadow-lg animate-in slide-in-from-top-2 duration-300`}
-      >
-        {isOnline ? (
-          <>
-            <Wifi className="w-4 h-4 mr-2" />
-            Back Online
-          </>
-        ) : (
-          <>
-            <WifiOff className="w-4 h-4 mr-2" />
-            Offline Mode
-          </>
-        )}
-      </Badge>
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+      <Card className={`border-0 shadow-lg ${isOnline ? "bg-green-500" : "bg-red-500"} text-white`}>
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2">
+            {isOnline ? (
+              <>
+                <Wifi className="w-4 h-4" />
+                <span className="text-sm font-medium">Back Online</span>
+                <Badge variant="secondary" className="bg-white/20 text-white">
+                  Connected
+                </Badge>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-4 h-4" />
+                <span className="text-sm font-medium">You're Offline</span>
+                <Badge variant="secondary" className="bg-white/20 text-white">
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  No Internet
+                </Badge>
+              </>
+            )}
+          </div>
+          {!isOnline && (
+            <p className="text-xs mt-1 opacity-90">Your data is saved locally and will sync when reconnected</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
