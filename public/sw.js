@@ -1,8 +1,8 @@
-const CACHE_NAME = "budget-tracker-v83"
-const APP_VERSION = "v83"
+const CACHE_NAME = "budget-tracker-v84"
+const APP_VERSION = "v84"
 const urlsToCache = ["/", "/offline.html", "/manifest.json", "/placeholder-logo.png", "/favicon.ico"]
 
-// Install event - cache resources and skip waiting
+// Install event - cache resources and skip waiting immediately
 self.addEventListener("install", (event) => {
   console.log(`Service Worker ${APP_VERSION} installing...`)
 
@@ -14,8 +14,11 @@ self.addEventListener("install", (event) => {
         return cache.addAll(urlsToCache)
       })
       .then(() => {
-        console.log("Service Worker installed, skipping waiting...")
+        console.log("Service Worker installed, skipping waiting immediately...")
         return self.skipWaiting()
+      })
+      .catch((error) => {
+        console.error("Service Worker installation failed:", error)
       }),
   )
 })
@@ -38,7 +41,7 @@ self.addEventListener("activate", (event) => {
         )
       })
       .then(() => {
-        console.log("Service Worker claiming clients...")
+        console.log("Service Worker claiming clients immediately...")
         return self.clients.claim()
       })
       .then(() => {
@@ -51,6 +54,9 @@ self.addEventListener("activate", (event) => {
             })
           })
         })
+      })
+      .catch((error) => {
+        console.error("Service Worker activation failed:", error)
       }),
   )
 })
@@ -172,6 +178,18 @@ self.addEventListener("message", (event) => {
         })
         .then(() => {
           console.log("Service Worker claimed clients after skip waiting")
+          // Notify clients that service worker is now active
+          return self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({
+                type: "SERVICE_WORKER_ACTIVATED",
+                version: APP_VERSION,
+              })
+            })
+          })
+        })
+        .catch((error) => {
+          console.error("Error during skip waiting:", error)
         })
       break
 
@@ -252,16 +270,31 @@ self.addEventListener("message", (event) => {
     case "FORCE_ACTIVATE":
       // Handle force activation requests
       console.log("Force activation requested")
-      self.clients.claim().then(() => {
-        console.log("Service Worker force claimed clients")
-        self.clients.matchAll().then((clients) => {
-          clients.forEach((client) => {
-            client.postMessage({
-              type: "SERVICE_WORKER_ACTIVATED",
-              version: APP_VERSION,
+      self.clients
+        .claim()
+        .then(() => {
+          console.log("Service Worker force claimed clients")
+          return self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({
+                type: "SERVICE_WORKER_ACTIVATED",
+                version: APP_VERSION,
+              })
             })
           })
         })
+        .catch((error) => {
+          console.error("Error during force activation:", error)
+        })
+      break
+
+    case "PING":
+      // Health check
+      console.log("Service Worker ping received")
+      event.ports[0].postMessage({
+        type: "PONG",
+        version: APP_VERSION,
+        active: true,
       })
       break
   }
@@ -310,9 +343,14 @@ self.addEventListener("push", (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(notificationData.title, options).catch((error) => {
-      console.error("Error showing PWA push notification:", error)
-    }),
+    self.registration
+      .showNotification(notificationData.title, options)
+      .then(() => {
+        console.log("Push notification shown successfully")
+      })
+      .catch((error) => {
+        console.error("Error showing PWA push notification:", error)
+      }),
   )
 })
 
@@ -341,6 +379,9 @@ self.addEventListener("appinstalled", (event) => {
         },
       ],
     })
+    .then(() => {
+      console.log("Installation notification shown successfully")
+    })
     .catch((error) => {
       console.error("Error showing PWA installation notification:", error)
     })
@@ -362,11 +403,43 @@ self.addEventListener("periodicsync", (event) => {
   }
 })
 
+// Error handling for unhandled promise rejections
+self.addEventListener("unhandledrejection", (event) => {
+  console.error("Service Worker unhandled promise rejection:", event.reason)
+})
+
+// Error handling for general errors
+self.addEventListener("error", (event) => {
+  console.error("Service Worker error:", event.error)
+})
+
 // Log when service worker is fully loaded and ready
-console.log(`Service Worker ${APP_VERSION} loaded successfully with PWA notification support`)
+console.log(`Service Worker ${APP_VERSION} loaded successfully with enhanced PWA notification support`)
 
 // Immediately claim clients if this is a new service worker
-if (self.registration && self.registration.active === null) {
+if (self.registration && !self.registration.active) {
   console.log("New service worker detected, claiming clients immediately")
-  self.clients.claim()
+  self.clients
+    .claim()
+    .then(() => {
+      console.log("New service worker claimed clients successfully")
+    })
+    .catch((error) => {
+      console.error("Error claiming clients:", error)
+    })
 }
+
+// Send ready signal to all clients
+self.clients
+  .matchAll()
+  .then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: "SERVICE_WORKER_READY",
+        version: APP_VERSION,
+      })
+    })
+  })
+  .catch((error) => {
+    console.error("Error sending ready signal:", error)
+  })

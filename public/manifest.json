@@ -1,11 +1,11 @@
 {
-  "name": "Daily Budget Tracker v83",
-  "short_name": "Budget v83",
-  "description": "Track your daily income, expenses, and bills with PWA push notifications",
+  "name": "Budget Tracker",
+  "short_name": "Budget Tracker",
+  "description": "A comprehensive budget tracking PWA for managing income, expenses, and financial goals",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#6366f1",
-  "theme_color": "#6366f1",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
   "orientation": "portrait-primary",
   "scope": "/",
   "lang": "en",
@@ -15,19 +15,25 @@
       "src": "/placeholder-logo.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable any"
     },
     {
       "src": "/placeholder-logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable any"
     }
   ],
   "screenshots": [
     {
       "src": "/placeholder.jpg",
-      "sizes": "540x720",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/placeholder.jpg",
+      "sizes": "750x1334",
       "type": "image/jpeg",
       "form_factor": "narrow"
     }
@@ -36,7 +42,7 @@
     {
       "name": "Add Income",
       "short_name": "Income",
-      "description": "Quickly add daily income",
+      "description": "Quickly add income entry",
       "url": "/?action=add-income",
       "icons": [
         {
@@ -46,10 +52,10 @@
       ]
     },
     {
-      "name": "Pay Bills",
-      "short_name": "Bills",
-      "description": "View and pay pending bills",
-      "url": "/?action=pay-bills",
+      "name": "Add Expense",
+      "short_name": "Expense",
+      "description": "Quickly add expense entry",
+      "url": "/?action=add-expense",
       "icons": [
         {
           "src": "/placeholder-logo.png",
@@ -58,8 +64,8 @@
       ]
     }
   ],
-  "related_applications": [],
   "prefer_related_applications": false,
+  "related_applications": [],
   "edge_side_panel": {
     "preferred_width": 400
   },
