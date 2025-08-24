@@ -60,6 +60,22 @@ const getWeekStartManila = () => {
   return weekStart.toISOString().split("T")[0]
 }
 
+// Helper function to get week end date in Manila
+const getWeekEndManila = () => {
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6) // Sunday
+  return weekEnd.toISOString().split("T")[0]
+}
+
+// Helper function to check if date is in current week
+const isDateInCurrentWeek = (dateString: string) => {
+  const date = new Date(dateString)
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(getWeekEndManila())
+  return date >= weekStart && date <= weekEnd
+}
+
 // Helper function to get days of current week with Manila dates
 const getCurrentWeekDays = () => {
   const weekStart = getWeekStartManila()
@@ -130,11 +146,11 @@ const initializeDailyIncome = () => {
   return weekDays.map((dayInfo) => ({
     day: dayInfo.day,
     amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0,
-    goal: dayInfo.day === "Sun" ? 800 : 1100,
+    goal: dayInfo.day === "Sun" ? 0 : 1100, // Sunday = 0 (non-workday), others = 1100
     date: dayInfo.date,
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
-    isWorkDay: dayInfo.day !== "Sun",
+    isWorkDay: dayInfo.day !== "Sun", // Sunday is non-workday by default
   }))
 }
 
@@ -218,7 +234,7 @@ export default function BudgetingApp() {
           return {
             day: dayInfo.day,
             amount: savedDay?.amount || 0,
-            goal: savedDay?.goal || (dayInfo.day === "Sat" || dayInfo.day === "Sun" ? 800 : 1100),
+            goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100, // Use workday status to set goal
             date: dayInfo.date,
             isToday: dayInfo.isToday,
             isPast: dayInfo.isPast,
@@ -249,8 +265,8 @@ export default function BudgetingApp() {
   // Real-time calculations with safe defaults
   const currency = dashboardData?.currency || "₱"
 
-  // Work days calculations with null checks
-  const workDays = Array.isArray(dailyIncome) ? dailyIncome.filter((day) => day?.isWorkDay) : []
+  // Work days calculations with null checks - only count workdays with goal > 0
+  const workDays = Array.isArray(dailyIncome) ? dailyIncome.filter((day) => day?.isWorkDay && (day?.goal || 0) > 0) : []
   const weeklyEarned = workDays.reduce((sum, day) => sum + (day?.amount || 0), 0)
   const weeklyGoal = workDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
   const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
@@ -258,7 +274,7 @@ export default function BudgetingApp() {
   // Today's data with null checks
   const todayData = Array.isArray(dailyIncome) ? dailyIncome.find((day) => day?.isToday) : null
   const todayIncome = todayData?.amount || 0
-  const todayGoal = todayData?.goal || dashboardData?.dailyIncomeGoal || 1100
+  const todayGoal = todayData?.isWorkDay ? todayData?.goal || 1100 : 0
 
   // Real-time expense calculations from transactions with null checks
   const currentWeekExpenses = Array.isArray(transactions)
@@ -279,29 +295,99 @@ export default function BudgetingApp() {
       })
     : []
 
+  // Get monthly payables that fall within current week
+  const getMonthlyPayablesForCurrentWeek = () => {
+    const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "{}")
+    const currentDate = new Date()
+    const currentMonthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`
+    const currentMonthPayables = monthlyPayables[currentMonthKey] || []
+
+    return currentMonthPayables
+      .filter((payable: any) => {
+        if (payable.date) {
+          return isDateInCurrentWeek(payable.date)
+        }
+        return false
+      })
+      .map((payable: any) => ({
+        ...payable,
+        week: "This Week", // Mark as current week
+        source: "monthly", // Mark source for identification
+      }))
+  }
+
+  // Combine weekly payables with monthly payables that fall in current week
+  const allCurrentWeekPayables = [...weeklyPayables, ...getMonthlyPayablesForCurrentWeek()]
+
   // Real-time payables calculations with null checks
-  const totalWeeklyPayables = Array.isArray(weeklyPayables)
-    ? weeklyPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
-    : 0
-  const pendingPayables = Array.isArray(weeklyPayables) ? weeklyPayables.filter((p) => p?.status === "pending") : []
+  const totalWeeklyPayables = allCurrentWeekPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
+  const pendingPayables = allCurrentWeekPayables.filter((p) => p?.status === "pending")
   const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
 
   // Calculate remaining work days and their potential earnings
   const remainingWorkDays = workDays.filter((day) => !day?.isPast && !day?.isToday)
   const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
 
-  // Projected total if goals are met for remaining work days
-  const projectedWeeklyTotal = weeklyEarned + potentialRemainingEarnings
-  const projectedWeeklySavings = projectedWeeklyTotal - totalWeeklyPayables - currentWeekExpenses
+  // This Week's Projected Savings calculation
+  const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
 
-  // Current actual savings (what you have now)
+  // Current actual balance calculation
   const totalIncome = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
     : 0
   const totalExpenses = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "expense").reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
-  const calculatedBalance = (dashboardData?.totalBalance || 0) + totalIncome - totalExpenses
+  const paidPayablesAmount = Array.isArray(weeklyPayables)
+    ? weeklyPayables.filter((p) => p?.status === "paid").reduce((sum, p) => sum + (p?.amount || 0), 0)
+    : 0
+
+  const calculatedBalance = (dashboardData?.totalBalance || 0) + totalIncome - totalExpenses - paidPayablesAmount
+
+  // Handle payment - deduct from balance
+  const handlePayment = (payableId: number, amount: number) => {
+    // Update payable status
+    const updatedPayables = weeklyPayables.map((payable) => {
+      if (payable.id === payableId) {
+        const newPaidCount = (payable.paidCount || 0) + 1
+        let newStatus = "paid"
+
+        // Smart completion logic
+        if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
+          newStatus = "completed"
+        } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
+          newStatus = "completed"
+        }
+
+        return {
+          ...payable,
+          status: newStatus,
+          paidCount: newPaidCount,
+        }
+      }
+      return payable
+    })
+
+    setWeeklyPayables(updatedPayables)
+
+    // Deduct payment from balance
+    setDashboardData((prev) => ({
+      ...prev,
+      totalBalance: prev.totalBalance - amount,
+    }))
+
+    // Add payment as expense transaction
+    const paymentTransaction = {
+      id: Date.now(),
+      description: `Payment: ${weeklyPayables.find((p) => p.id === payableId)?.name || "Bill"}`,
+      amount: -amount,
+      type: "expense" as const,
+      category: "Bills",
+      date: new Date().toISOString().split("T")[0],
+    }
+
+    setTransactions((prev) => [paymentTransaction, ...prev])
+  }
 
   // Clear all data function
   const clearAllData = () => {
@@ -385,7 +471,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v36</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v80</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -425,14 +511,20 @@ export default function BudgetingApp() {
               {currency}
               {safeToLocaleString(todayIncome)}
             </div>
-            <Progress value={(todayIncome / todayGoal) * 100} className="h-2 bg-white/20" />
-            <div className="flex justify-between text-xs text-purple-200 mt-1">
-              <span>
-                {currency}
-                {safeToLocaleString(todayIncome)} earned
-              </span>
-              <span>{((todayIncome / todayGoal) * 100).toFixed(0)}%</span>
-            </div>
+            {todayGoal > 0 ? (
+              <>
+                <Progress value={(todayIncome / todayGoal) * 100} className="h-2 bg-white/20" />
+                <div className="flex justify-between text-xs text-purple-200 mt-1">
+                  <span>
+                    {currency}
+                    {safeToLocaleString(todayIncome)} earned
+                  </span>
+                  <span>{((todayIncome / todayGoal) * 100).toFixed(0)}%</span>
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-purple-200 mt-1">Rest Day - No Goal Set</div>
+            )}
           </div>
         </div>
 
@@ -502,20 +594,20 @@ export default function BudgetingApp() {
                 </CardContent>
               </Card>
 
-              {/* Real-time Projected Savings */}
+              {/* Updated Savings Tracker */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="If Goals Met"
-                  value={`${currency}${safeToLocaleString(projectedWeeklySavings)}`}
-                  subtitle="Projected Savings"
+                  value={`${currency}${safeToLocaleString(calculatedBalance + potentialRemainingEarnings)}`}
+                  subtitle="Projected Balance"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-green-500 to-emerald-600"
                   iconColor="text-green-200"
                 />
                 <OptimizedCard
-                  title="Current"
-                  value={`${currency}${safeToLocaleString(calculatedBalance)}`}
-                  subtitle="Actual Savings"
+                  title="This Week's"
+                  value={`${currency}${safeToLocaleString(thisWeekProjectedSavings)}`}
+                  subtitle="Projected Savings"
                   icon={TrendingDown}
                   gradient="bg-gradient-to-br from-orange-500 to-red-600"
                   iconColor="text-orange-200"
@@ -592,7 +684,7 @@ export default function BudgetingApp() {
                               {safeToLocaleString(day?.amount)}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {day?.isWorkDay
+                              {day?.isWorkDay && (day?.goal || 0) > 0
                                 ? `${(((day?.amount || 0) / (day?.goal || 1)) * 100).toFixed(0)}%`
                                 : "N/A"}
                             </p>
@@ -654,9 +746,10 @@ export default function BudgetingApp() {
 
             <TabsContent value="payables" className="space-y-4 mt-0">
               <WeeklyPayablesCard
-                weeklyPayables={weeklyPayables}
+                weeklyPayables={allCurrentWeekPayables}
                 setWeeklyPayables={setWeeklyPayables}
                 currency={currency}
+                onPayment={handlePayment}
               />
             </TabsContent>
 
@@ -746,6 +839,7 @@ export default function BudgetingApp() {
           }}
           budgetCategories={budgetCategories}
           currency={currency}
+          defaultDescription="work" // Set default description to "work"
         />
 
         <SettingsDialog
@@ -783,7 +877,11 @@ export default function BudgetingApp() {
                 </div>
               </div>
               <div className="p-4 overflow-y-auto max-h-[60vh]">
-                <NotificationManager weeklyPayables={weeklyPayables} dailyIncome={dailyIncome} currency={currency} />
+                <NotificationManager
+                  weeklyPayables={allCurrentWeekPayables}
+                  dailyIncome={dailyIncome}
+                  currency={currency}
+                />
               </div>
             </div>
           </div>

@@ -23,6 +23,7 @@ interface AddTransactionDialogProps {
   onAddTransaction: (transaction: Transaction) => void
   budgetCategories: Array<{ name: string; budgeted: number; spent: number; color: string; id: number }>
   currency: string
+  defaultDescription?: string
 }
 
 export function AddTransactionDialog({
@@ -31,6 +32,7 @@ export function AddTransactionDialog({
   onAddTransaction,
   budgetCategories,
   currency,
+  defaultDescription = "work",
 }: AddTransactionDialogProps) {
   const [activeTab, setActiveTab] = useState("income")
   const [formData, setFormData] = useState({
@@ -39,6 +41,26 @@ export function AddTransactionDialog({
     category: "",
     date: new Date().toISOString().split("T")[0],
   })
+
+  // Set default description when dialog opens
+  const handleOpenChange = (isOpen: boolean) => {
+    if (isOpen) {
+      setFormData((prev) => ({
+        ...prev,
+        description: activeTab === "income" ? defaultDescription : "",
+      }))
+    }
+    onOpenChange(isOpen)
+  }
+
+  // Update description when tab changes
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    setFormData((prev) => ({
+      ...prev,
+      description: tab === "income" ? defaultDescription : "",
+    }))
+  }
 
   const handleSubmit = (type: "income" | "expense") => {
     if (!formData.description || !formData.amount) return
@@ -53,7 +75,7 @@ export function AddTransactionDialog({
 
     onAddTransaction(transaction)
     setFormData({
-      description: "",
+      description: type === "income" ? defaultDescription : "",
       amount: "",
       category: "",
       date: new Date().toISOString().split("T")[0],
@@ -68,7 +90,7 @@ export function AddTransactionDialog({
       : ["Food", "Transport", "Entertainment", "Shopping", "Bills", "Other"]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md mx-4 bg-gradient-to-br from-white to-purple-50">
         <DialogHeader>
           <DialogTitle className="text-xl bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
@@ -77,7 +99,7 @@ export function AddTransactionDialog({
           <DialogDescription>Record your income or expenses</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-purple-100 p-1 rounded-lg">
             <TabsTrigger value="income" className="data-[state=active]:bg-white rounded-md">
               <DollarSign className="w-4 h-4 mr-2" />
@@ -97,7 +119,7 @@ export function AddTransactionDialog({
                   id="income-description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Daily work earnings"
+                  placeholder="work"
                   className="bg-white"
                 />
               </div>

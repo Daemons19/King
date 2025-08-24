@@ -11,9 +11,15 @@ interface WeeklyPayablesCardProps {
   weeklyPayables: any[]
   setWeeklyPayables: (payables: any[]) => void
   currency: string
+  onPayment?: (payableId: number, amount: number) => void
 }
 
-export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency }: WeeklyPayablesCardProps) {
+export function WeeklyPayablesCard({
+  weeklyPayables,
+  setWeeklyPayables,
+  currency,
+  onPayment,
+}: WeeklyPayablesCardProps) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("payableNotificationsEnabled")
@@ -31,27 +37,36 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
   }
 
   const markAsPaid = (id: number) => {
-    const updated = weeklyPayables.map((payable) => {
-      if (payable.id === id) {
-        const newPaidCount = (payable.paidCount || 0) + 1
-        let newStatus = "paid"
+    const payable = weeklyPayables.find((p) => p.id === id)
+    if (!payable) return
 
-        // Smart completion logic
-        if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
-          newStatus = "completed"
-        } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
-          newStatus = "completed"
-        }
+    // Call the payment handler if provided (for balance deduction)
+    if (onPayment) {
+      onPayment(id, payable.amount)
+    } else {
+      // Fallback to old behavior if no payment handler
+      const updated = weeklyPayables.map((payable) => {
+        if (payable.id === id) {
+          const newPaidCount = (payable.paidCount || 0) + 1
+          let newStatus = "paid"
 
-        return {
-          ...payable,
-          status: newStatus,
-          paidCount: newPaidCount,
+          // Smart completion logic
+          if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
+            newStatus = "completed"
+          } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
+            newStatus = "completed"
+          }
+
+          return {
+            ...payable,
+            status: newStatus,
+            paidCount: newPaidCount,
+          }
         }
-      }
-      return payable
-    })
-    setWeeklyPayables(updated)
+        return payable
+      })
+      setWeeklyPayables(updated)
+    }
   }
 
   const pendingPayables = weeklyPayables.filter((p) => p.status === "pending")
@@ -59,9 +74,10 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
   const totalPayables = weeklyPayables.reduce((sum, p) => sum + p.amount, 0)
   const completionRate = totalPayables > 0 ? ((totalPayables - totalPending) / totalPayables) * 100 : 0
 
-  // Group payables by day for Saturday focus
+  // Group payables by day for Saturday focus and monthly payables
   const saturdayPayables = weeklyPayables.filter((p) => p.dueDay === "Saturday")
-  const otherPayables = weeklyPayables.filter((p) => p.dueDay !== "Saturday")
+  const monthlyPayables = weeklyPayables.filter((p) => p.source === "monthly")
+  const otherPayables = weeklyPayables.filter((p) => p.dueDay !== "Saturday" && p.source !== "monthly")
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -93,6 +109,60 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
           </div>
           <Progress value={completionRate} className="h-2" />
         </div>
+
+        {/* Monthly Bills Section (Highlighted) */}
+        {monthlyPayables.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-purple-600">
+              <Calendar className="w-4 h-4" />
+              Monthly Bills (Due This Week)
+            </div>
+            {monthlyPayables.map((payable) => (
+              <div
+                key={payable.id}
+                className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200"
+              >
+                <div className="flex-1">
+                  <div className="font-medium text-gray-800">{payable.name}</div>
+                  <div className="text-sm text-gray-600 flex items-center gap-2">
+                    <DollarSign className="w-3 h-3" />
+                    {currency}
+                    {payable.amount.toLocaleString()}
+                    <span className="text-purple-600">• {payable.dueDay}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-xs border-purple-300 text-purple-700">
+                      Monthly
+                    </Badge>
+                    {payable.date && (
+                      <span className="text-xs text-gray-500">Due: {new Date(payable.date).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {payable.status === "pending" ? (
+                    <Button
+                      size="sm"
+                      onClick={() => markAsPaid(payable.id)}
+                      className="bg-purple-600 hover:bg-purple-700 h-8 px-3"
+                    >
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Pay
+                    </Button>
+                  ) : (
+                    <Badge
+                      className={`${
+                        payable.status === "completed" ? "bg-green-100 text-green-800" : "bg-purple-100 text-purple-800"
+                      }`}
+                    >
+                      {payable.status === "completed" ? "Done" : "Paid"}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Saturday Bills Section (Highlighted) */}
         {saturdayPayables.length > 0 && (
@@ -151,7 +221,7 @@ export function WeeklyPayablesCard({ weeklyPayables, setWeeklyPayables, currency
         {/* Other Bills Section */}
         {otherPayables.length > 0 && (
           <div className="space-y-3">
-            {saturdayPayables.length > 0 && (
+            {(saturdayPayables.length > 0 || monthlyPayables.length > 0) && (
               <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
                 <Clock className="w-4 h-4" />
                 Other Days

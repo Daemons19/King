@@ -391,14 +391,23 @@ export function SettingsDialog({
 
   const updateDailyIncome = (index: number, field: string, value: number | boolean) => {
     const updated = [...dailyIncome]
-    updated[index] = { ...updated[index], [field]: value }
+    if (field === "isWorkDay") {
+      // When workday status changes, update the goal accordingly
+      updated[index] = {
+        ...updated[index],
+        [field]: value,
+        goal: value ? 1100 : 0, // Set goal to 1100 for workdays, 0 for non-workdays
+      }
+    } else {
+      updated[index] = { ...updated[index], [field]: value }
+    }
     setDailyIncome(updated)
   }
 
   const updateAllDailyGoals = (newGoal: number) => {
     const updated = dailyIncome.map((day) => ({
       ...day,
-      goal: day.day === "Sun" ? newGoal * 0.75 : newGoal,
+      goal: day.isWorkDay ? newGoal : 0, // Only set goal for workdays
     }))
     setDailyIncome(updated)
   }
@@ -986,7 +995,7 @@ export function SettingsDialog({
                   <div className="grid grid-cols-2 gap-2">
                     <Select
                       value={newPayable.dueDay}
-                      onValueChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
+                      onChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
                     >
                       <SelectTrigger className="bg-white h-9">
                         <SelectValue />
@@ -1003,7 +1012,7 @@ export function SettingsDialog({
                     </Select>
                     <Select
                       value={newPayable.frequency}
-                      onValueChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
+                      onChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
                     >
                       <SelectTrigger className="bg-white h-9">
                         <SelectValue />
@@ -1104,7 +1113,7 @@ export function SettingsDialog({
                             />
                             <Select
                               value={editMonthlyPayableData.frequency || "monthly"}
-                              onValueChange={(value) =>
+                              onChange={(value) =>
                                 setEditMonthlyPayableData({ ...editMonthlyPayableData, frequency: value })
                               }
                             >
@@ -1204,7 +1213,7 @@ export function SettingsDialog({
                     />
                     <Select
                       value={newMonthlyPayable.frequency}
-                      onValueChange={(value) => setNewMonthlyPayable({ ...newMonthlyPayable, frequency: value })}
+                      onChange={(value) => setNewMonthlyPayable({ ...newMonthlyPayable, frequency: value })}
                     >
                       <SelectTrigger className="bg-white h-9">
                         <SelectValue />
@@ -1249,7 +1258,7 @@ export function SettingsDialog({
                 {/* Week Selection */}
                 <div className="space-y-2">
                   <Label>Select Previous Week</Label>
-                  <Select onValueChange={handleWeekSelect}>
+                  <Select onChange={handleWeekSelect}>
                     <SelectTrigger className="bg-white">
                       <SelectValue placeholder="Choose a week to audit..." />
                     </SelectTrigger>
