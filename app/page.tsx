@@ -5,18 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import {
-  TrendingDown,
-  Plus,
-  Settings,
-  Wallet,
-  Target,
-  Home,
-  DollarSign,
-  CreditCard,
-  TrendingUp,
-  Bell,
-} from "lucide-react"
+import { TrendingDown, Plus, Settings, Wallet, Home, DollarSign, CreditCard, TrendingUp, Bell } from "lucide-react"
 import { SpendingChart } from "../components/spending-chart"
 import { TransactionList } from "../components/transaction-list"
 import { SettingsDialog } from "../components/settings-dialog"
@@ -581,9 +570,10 @@ export default function BudgetingApp() {
                   iconColor="text-emerald-200"
                 />
                 <OptimizedCard
-                  title="Work Days"
-                  value={`${currency}${safeToLocaleString(weeklyEarned)}`}
-                  icon={Target}
+                  title="Future Balance"
+                  value={`${currency}${safeToLocaleString(calculatedBalance + potentialRemainingEarnings - totalPendingPayables)}`}
+                  subtitle="(this week)"
+                  icon={TrendingUp}
                   gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
                   iconColor="text-blue-200"
                 />
