@@ -41,7 +41,6 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react"
-import { BiweeklyScheduler } from "./biweekly-scheduler"
 import { AppUpdateManager } from "./app-update-manager"
 
 // Safe number formatting functions
@@ -140,252 +139,25 @@ const safeLocalStorage = {
   },
 }
 
-// Safe number formatting function
-// const safeToFixed = (value: any, decimals = 2): string => {
-//   const num = Number(value)
-//   return isNaN(num) ? "0.00" : num.toFixed(decimals)
-// }
-
-// Safe number conversion
-// const safeNumber = (value: any): number => {
-//   const num = Number(value)
-//   return isNaN(num) ? 0 : num
-// }
-
-// Helper functions
-// const getManilaTime = () => {
-//   return new Date().toLocaleString("en-US", {
-//     timeZone: "Asia/Manila",
-//     year: "numeric",
-//     month: "2-digit",
-//     day: "2-digit",
-//     hour: "2-digit",
-//     minute: "2-digit",
-//     hour12: true,
-//   })
-// }
-
-const getWeeksInMonth = (year: number, month: number) => {
-  const firstDay = new Date(year, month, 1)
-  const lastDay = new Date(year, month + 1, 0)
-
-  const weeks = []
-  let currentWeek = 1
-  const weekStart = new Date(firstDay)
-
-  const dayOfWeek = weekStart.getDay()
-  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  weekStart.setDate(weekStart.getDate() - daysToMonday)
-
-  while (weekStart <= lastDay) {
-    const weekEnd = new Date(weekStart)
-    weekEnd.setDate(weekEnd.getDate() + 6)
-
-    if (
-      weekStart.getMonth() === month ||
-      weekEnd.getMonth() === month ||
-      (weekStart.getMonth() < month && weekEnd.getMonth() > month)
-    ) {
-      weeks.push({
-        label: `Week ${currentWeek}`,
-        value: `Week ${currentWeek}`,
-        start: new Date(weekStart),
-        end: new Date(weekEnd),
-        dateRange: `${weekStart.getDate()}-${weekEnd.getDate()}`,
-      })
-      currentWeek++
-    }
-
-    weekStart.setDate(weekStart.getDate() + 7)
-  }
-
-  return weeks
+// Helper function to check if a date falls within current week
+const isDateInCurrentWeek = (dateString: string) => {
+  const date = new Date(dateString)
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6) // Sunday
+  return date >= weekStart && date <= weekEnd
 }
 
-const getWeekForDate = (date: string, year: number, month: number) => {
-  const targetDate = new Date(date)
-  const weeks = getWeeksInMonth(year, month)
-
-  for (const week of weeks) {
-    if (targetDate >= week.start && targetDate <= week.end) {
-      return week.value
-    }
-  }
-
-  return "Week 1"
-}
-
-const getDayNameFromDate = (date: string) => {
-  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-  const targetDate = new Date(date)
-  return dayNames[targetDate.getDay()]
-}
-
+// Helper function to get current month info
 const getCurrentMonthInfo = () => {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
   const monthName = now.toLocaleString("default", { month: "long" })
-  const weeks = getWeeksInMonth(year, month)
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
 
-  return { year, month, monthName, weeks }
+  return { year, month, monthName, daysInMonth }
 }
-
-// Auto color assignment for payables
-const getAutoColor = (index: number) => {
-  const colors = [
-    "from-blue-500 to-indigo-500",
-    "from-green-500 to-emerald-500",
-    "from-purple-500 to-violet-500",
-    "from-orange-500 to-red-500",
-    "from-pink-500 to-rose-500",
-    "from-teal-500 to-cyan-500",
-    "from-yellow-500 to-amber-500",
-    "from-indigo-500 to-purple-500",
-  ]
-  return colors[index % colors.length]
-}
-
-// Bi-weekly scheduling logic
-const getBiWeeklySchedule = (currentWeek: number, totalWeeks: number) => {
-  // First payment: Week 1-2 (1st-15th)
-  // Second payment: Week 3-4 (16th-end of month)
-  // If 5 weeks, second payment can extend to week 5
-
-  if (currentWeek <= 2) {
-    return { period: "first", dueWeeks: [1, 2], label: "1st-15th" }
-  } else {
-    return { period: "second", dueWeeks: totalWeeks === 5 ? [3, 4, 5] : [3, 4], label: "16th-End" }
-  }
-}
-
-// Helper function to get previous weeks
-const getPreviousWeeks = (weeksBack = 8) => {
-  const weeks = []
-  const today = new Date()
-
-  for (let i = 1; i <= weeksBack; i++) {
-    const weekStart = new Date(today)
-    weekStart.setDate(today.getDate() - (today.getDay() === 0 ? 6 : today.getDay() - 1) - i * 7)
-
-    const weekEnd = new Date(weekStart)
-    weekEnd.setDate(weekStart.getDate() + 6)
-
-    weeks.push({
-      weekNumber: i,
-      startDate: weekStart,
-      endDate: weekEnd,
-      range: `${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`,
-      key: `${weekStart.getFullYear()}-W${Math.ceil((weekStart.getDate() + weekStart.getDay()) / 7)}`,
-    })
-  }
-
-  return weeks
-}
-
-// Helper function to calculate week summary
-// const calculateWeekSummary = (
-//   weekRange: string,
-//   transactions: any[],
-//   dailyIncome: any[],
-//   weeklyPayables: any[],
-//   budgetCategories: any[],
-// ) => {
-//   // Get week start and end dates
-//   const [startStr, endStr] = weekRange.split(" - ")
-//   const weekStart = new Date(startStr)
-//   const weekEnd = new Date(endStr)
-
-//   // Filter transactions for this week
-//   const weekTransactions = Array.isArray(transactions)
-//     ? transactions.filter((t) => {
-//         if (!t || !t.date) return false
-//         const transactionDate = new Date(t.date)
-//         return transactionDate >= weekStart && transactionDate <= weekEnd
-//       })
-//     : []
-
-//   // Calculate totals with safe number handling
-//   const totalIncome = weekTransactions
-//     .filter((t) => t && t.type === "income")
-//     .reduce((sum, t) => sum + safeNumber(t.amount), 0)
-
-//   const totalExpenses = weekTransactions
-//     .filter((t) => t && t.type === "expense")
-//     .reduce((sum, t) => sum + Math.abs(safeNumber(t.amount)), 0)
-
-//   // Calculate category spending for this week with safe handling
-//   const categorySpending = Array.isArray(budgetCategories)
-//     ? budgetCategories.map((category) => {
-//         if (!category) return { weeklySpent: 0, weeklyProgress: 0 }
-
-//         const spent = weekTransactions
-//           .filter((t) => t && t.type === "expense" && t.category === category.name)
-//           .reduce((sum, t) => sum + Math.abs(safeNumber(t.amount)), 0)
-
-//         const budgeted = safeNumber(category.budgeted)
-//         const weeklyProgress = budgeted > 0 ? (spent / budgeted) * 100 : 0
-
-//         return {
-//           ...category,
-//           weeklySpent: spent,
-//           weeklyProgress: safeNumber(weeklyProgress),
-//         }
-//       })
-//     : []
-
-//   // Calculate payables for this week (if available in history)
-//   const weeklyPayablesHistory = JSON.parse(safeLocalStorage.getItem("weeklyPayablesHistory") || "[]")
-//   const weekHistory = Array.isArray(weeklyPayablesHistory)
-//     ? weeklyPayablesHistory.find((w: any) => w && w.weekRange === weekRange)
-//     : null
-
-//   let totalPayables = 0
-//   let paidPayables = 0
-//   let unpaidPayables = 0
-
-//   if (weekHistory && Array.isArray(weekHistory.payables)) {
-//     totalPayables = weekHistory.payables.reduce((sum: number, p: any) => sum + safeNumber(p?.amount), 0)
-//     paidPayables = weekHistory.payables
-//       .filter((p: any) => p && p.status === "paid")
-//       .reduce((sum: number, p: any) => sum + safeNumber(p?.amount), 0)
-//     unpaidPayables = totalPayables - paidPayables
-//   }
-
-//   // Calculate daily income goals vs actual for this week
-//   const weekDays = []
-//   for (let d = new Date(weekStart); d <= weekEnd; d.setDate(d.getDate() + 1)) {
-//     const dayStr = d.toLocaleDateString("en-US", { weekday: "short" })
-//     const dayIncome = weekTransactions
-//       .filter((t) => t && t.type === "income" && new Date(t.date || "").toDateString() === d.toDateString())
-//       .reduce((sum, t) => sum + safeNumber(t.amount), 0)
-
-//     weekDays.push({
-//       day: dayStr,
-//       date: d.toLocaleDateString(),
-//       income: dayIncome,
-//       goal: dayStr === "Sun" ? 600 : 800, // Default goals
-//     })
-//   }
-
-//   const totalGoal = weekDays.reduce((sum, day) => sum + safeNumber(day.goal), 0)
-//   const goalAchievement = totalGoal > 0 ? (totalIncome / totalGoal) * 100 : 0
-
-//   return {
-//     weekRange,
-//     totalIncome: safeNumber(totalIncome),
-//     totalExpenses: safeNumber(totalExpenses),
-//     totalPayables: safeNumber(totalPayables),
-//     paidPayables: safeNumber(paidPayables),
-//     unpaidPayables: safeNumber(unpaidPayables),
-//     netSavings: safeNumber(totalIncome - totalExpenses - paidPayables),
-//     categorySpending,
-//     weekDays,
-//     totalGoal: safeNumber(totalGoal),
-//     goalAchievement: safeNumber(goalAchievement),
-//     transactionCount: weekTransactions.length,
-//   }
-// }
 
 interface SettingsDialogProps {
   open: boolean
@@ -439,6 +211,16 @@ export function SettingsDialog({
   const [importData, setImportData] = useState("")
   const [lastBackup, setLastBackup] = useState<string | null>(null)
 
+  // Monthly payables state
+  const [monthlyPayables, setMonthlyPayables] = useState<any[]>([])
+  const [newMonthlyPayable, setNewMonthlyPayable] = useState({
+    name: "",
+    amount: 0,
+    dayOfMonth: 15, // Fixed day of month (1-31)
+    status: "pending",
+  })
+  const [editingMonthlyPayable, setEditingMonthlyPayable] = useState<number | null>(null)
+
   // Safe dashboard data with defaults
   const safeDashboardData = dashboardData || {
     totalBalance: 0,
@@ -457,6 +239,23 @@ export function SettingsDialog({
 
   // Calculate week summary with safe data
   const weekSummary = calculateWeekSummary(safeDailyIncome, safeTransactions, safeWeeklyPayables)
+
+  // Load monthly payables from localStorage
+  useEffect(() => {
+    const saved = safeLocalStorage.getItem("monthlyPayables")
+    if (saved) {
+      try {
+        setMonthlyPayables(JSON.parse(saved))
+      } catch {
+        setMonthlyPayables([])
+      }
+    }
+  }, [])
+
+  // Save monthly payables to localStorage
+  useEffect(() => {
+    safeLocalStorage.setItem("monthlyPayables", JSON.stringify(monthlyPayables))
+  }, [monthlyPayables])
 
   // Load last backup time
   useEffect(() => {
@@ -533,6 +332,57 @@ export function SettingsDialog({
     setWeeklyPayables(safeWeeklyPayables.filter((payable) => payable && payable.id !== id))
   }
 
+  // Monthly payables functions
+  const addMonthlyPayable = () => {
+    if (newMonthlyPayable.name && newMonthlyPayable.amount > 0) {
+      const payable = {
+        id: Date.now(),
+        ...newMonthlyPayable,
+      }
+      setMonthlyPayables([...monthlyPayables, payable])
+      setNewMonthlyPayable({
+        name: "",
+        amount: 0,
+        dayOfMonth: 15,
+        status: "pending",
+      })
+    }
+  }
+
+  const updateMonthlyPayable = (id: number, updates: any) => {
+    setMonthlyPayables(monthlyPayables.map((payable) => (payable.id === id ? { ...payable, ...updates } : payable)))
+    setEditingMonthlyPayable(null)
+  }
+
+  const deleteMonthlyPayable = (id: number) => {
+    setMonthlyPayables(monthlyPayables.filter((payable) => payable.id !== id))
+  }
+
+  // Get monthly payables that fall in current week
+  const getMonthlyPayablesForCurrentWeek = () => {
+    const currentMonthInfo = getCurrentMonthInfo()
+
+    return monthlyPayables
+      .filter((payable) => {
+        // Create date for this month's due date
+        const dueDate = new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth)
+        const dueDateString = dueDate.toISOString().split("T")[0]
+
+        // Check if due date falls in current week
+        return isDateInCurrentWeek(dueDateString)
+      })
+      .map((payable) => ({
+        ...payable,
+        week: "This Week",
+        source: "monthly",
+        dueDay: new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth).toLocaleDateString(
+          "en-US",
+          { weekday: "long" },
+        ),
+        date: new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth).toISOString().split("T")[0],
+      }))
+  }
+
   const addExpenseCategory = () => {
     if (newExpenseCategory && !safeExpenseCategories.includes(newExpenseCategory)) {
       setExpenseCategories([...safeExpenseCategories, newExpenseCategory])
@@ -568,8 +418,7 @@ export function SettingsDialog({
       transactions: safeTransactions,
       dailyIncome: safeDailyIncome,
       expenseCategories: safeExpenseCategories,
-      monthlyPayables: JSON.parse(localStorage.getItem("monthlyPayables") || "{}"),
-      biweeklyPayables: JSON.parse(localStorage.getItem("biweeklyPayables") || "{}"),
+      monthlyPayables: monthlyPayables,
     }
 
     const jsonString = JSON.stringify(dataToExport, null, 2)
@@ -602,14 +451,7 @@ export function SettingsDialog({
       if (parsed.transactions) setTransactions(parsed.transactions)
       if (parsed.dailyIncome) setDailyIncome(parsed.dailyIncome)
       if (parsed.expenseCategories) setExpenseCategories(parsed.expenseCategories)
-
-      // Import additional data to localStorage
-      if (parsed.monthlyPayables) {
-        localStorage.setItem("monthlyPayables", JSON.stringify(parsed.monthlyPayables))
-      }
-      if (parsed.biweeklyPayables) {
-        localStorage.setItem("biweeklyPayables", JSON.stringify(parsed.biweeklyPayables))
-      }
+      if (parsed.monthlyPayables) setMonthlyPayables(parsed.monthlyPayables)
 
       setImportData("")
       alert("Data imported successfully!")
@@ -617,372 +459,6 @@ export function SettingsDialog({
       alert("Error importing data. Please check the format.")
     }
   }
-
-  // const [activeTab, setActiveTab] = useState("general")
-  // const [newCategoryName, setNewCategoryName] = useState("")
-  // const [editingCategoryName, setEditingCategoryName] = useState<string | null>(null)
-  // const [editingCategoryValue, setEditingCategoryValue] = useState("")
-
-  // // Handle adding new expense category
-  // const handleAddExpenseCategory = () => {
-  //   if (newCategoryName.trim() && !expenseCategories.includes(newCategoryName.trim())) {
-  //     setExpenseCategories([...expenseCategories, newCategoryName.trim()])
-  //     setNewCategoryName("")
-  //   }
-  // }
-
-  // // Handle editing expense category
-  // const handleEditExpenseCategory = (oldName: string) => {
-  //   setEditingCategoryName(oldName)
-  //   setEditingCategoryValue(oldName)
-  // }
-
-  // // Handle saving edited category
-  // const handleSaveExpenseCategory = () => {
-  //   if (editingCategoryName && editingCategoryValue.trim() && editingCategoryValue !== editingCategoryName) {
-  //     const updatedCategories = expenseCategories.map((cat) =>
-  //       cat === editingCategoryName ? editingCategoryValue.trim() : cat,
-  //     )
-  //     setExpenseCategories(updatedCategories)
-  //   }
-  //   setEditingCategoryName(null)
-  //   setEditingCategoryValue("")
-  // }
-
-  // // Handle deleting expense category
-  // const handleDeleteExpenseCategory = (categoryName: string) => {
-  //   if (window.confirm(`Delete category "${categoryName}"?`)) {
-  //     setExpenseCategories(expenseCategories.filter((cat) => cat !== categoryName))
-  //   }
-  // }
-
-  // // Handle workday toggle
-  // const handleWorkdayToggle = (dayIndex: number) => {
-  //   if (!Array.isArray(dailyIncome) || !dailyIncome[dayIndex]) return
-
-  //   const updatedIncome = [...dailyIncome]
-  //   const day = updatedIncome[dayIndex]
-  //   day.isWorkDay = !day.isWorkDay
-  //   day.goal = day.isWorkDay ? 1100 : 0 // Set goal based on workday status
-  //   setDailyIncome(updatedIncome)
-  // }
-
-  // // Handle goal change
-  // const handleGoalChange = (dayIndex: number, newGoal: number) => {
-  //   if (!Array.isArray(dailyIncome) || !dailyIncome[dayIndex]) return
-
-  //   const updatedIncome = [...dailyIncome]
-  //   updatedIncome[dayIndex].goal = safeNumber(newGoal)
-  //   setDailyIncome(updatedIncome)
-  // }
-
-  // const [newPayable, setNewPayable] = useState({
-  //   name: "",
-  //   amount: "",
-  //   dueDay: "Saturday", // Changed default to Saturday
-  //   status: "pending",
-  //   week: "This Week",
-  //   frequency: "weekly",
-  //   paidCount: 0,
-  // })
-
-  // const [editingPayable, setEditingPayable] = useState<number | null>(null)
-  // const [editPayableData, setEditPayableData] = useState<any>({})
-
-  // const [monthlyPayables, setMonthlyPayables] = useState<any>({})
-  // const [previousWeeks, setPreviousWeeks] = useState<any[]>([])
-  // const [selectedWeekSummary, setSelectedWeekSummary] = useState<any>(null)
-
-  // // Category management state
-  // const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null)
-  // const [editCategoryValue, setEditCategoryValue] = useState("")
-
-  // const [newCategory, setNewCategory] = useState({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  // const [editingBudgetCategory, setEditingBudgetCategory] = useState<any>(null)
-
-  // useEffect(() => {
-  //   if (typeof window !== "undefined") {
-  //     const saved = safeLocalStorage.getItem("monthlyPayables")
-  //     if (saved) {
-  //       try {
-  //         const parsed = JSON.parse(saved)
-  //         if (Array.isArray(parsed)) {
-  //           // Convert old array format to new object format
-  //           const currentMonthInfo = getCurrentMonthInfo()
-  //           const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
-  //           setMonthlyPayables({ [currentMonthKey]: parsed })
-  //         } else {
-  //           setMonthlyPayables(parsed || {})
-  //         }
-  //       } catch {
-  //         setMonthlyPayables({})
-  //       }
-  //     }
-  //   }
-  // }, [])
-
-  // // Load previous weeks data
-  // useEffect(() => {
-  //   const weeks = getPreviousWeeks(8)
-  //   setPreviousWeeks(weeks)
-  // }, [])
-
-  // const handleDateChange = (date: string) => {
-  //   if (date) {
-  //     const currentMonthInfo = getCurrentMonthInfo()
-  //     const detectedWeek = getWeekForDate(date, currentMonthInfo.year, currentMonthInfo.month)
-  //     const detectedDay = getDayNameFromDate(date)
-
-  //     setNewPayable({
-  //       ...newPayable,
-  //       date: date,
-  //       week: detectedWeek,
-  //       dueDay: detectedDay,
-  //     })
-  //   } else {
-  //     setNewPayable({
-  //       ...newPayable,
-  //       date: "",
-  //       week: "Week 1",
-  //       dueDay: "Saturday", // Changed default to Saturday
-  //     })
-  //   }
-  // }
-
-  // const currentMonthInfo = getCurrentMonthInfo()
-  // const currentMonthKey = `${currentMonthInfo.year}-${currentMonthInfo.month}`
-  // const currentMonthPayables = monthlyPayables[currentMonthKey] || []
-
-  // const updateDashboardData = (field: string, value: any) => {
-  //   setDashboardData({ ...dashboardData, [field]: value })
-  // }
-
-  // const updateDailyIncome = (index: number, field: string, value: number | boolean) => {
-  //   if (!Array.isArray(dailyIncome) || !dailyIncome[index]) return
-
-  //   const updated = [...dailyIncome]
-  //   if (field === "isWorkDay") {
-  //     // When workday status changes, update the goal accordingly
-  //     updated[index] = {
-  //       ...updated[index],
-  //       [field]: value,
-  //       goal: value ? 1100 : 0, // Set goal to 1100 for workdays, 0 for non-workdays
-  //     }
-  //   } else {
-  //     updated[index] = { ...updated[index], [field]: value }
-  //   }
-  //   setDailyIncome(updated)
-  // }
-
-  // const updateAllDailyGoals = (newGoal: number) => {
-  //   if (!Array.isArray(dailyIncome)) return
-
-  //   const updated = dailyIncome.map((day) => ({
-  //     ...day,
-  //     goal: day?.isWorkDay ? safeNumber(newGoal) : 0, // Only set goal for workdays
-  //   }))
-  //   setDailyIncome(updated)
-  // }
-
-  // // Category management functions
-  // const startEditingCategory = (index: number) => {
-  //   if (!Array.isArray(expenseCategories) || !expenseCategories[index]) return
-
-  //   setEditingCategoryIndex(index)
-  //   setEditCategoryValue(expenseCategories[index])
-  // }
-
-  // const saveEditCategory = () => {
-  //   if (editCategoryValue.trim() && editingCategoryIndex !== null && Array.isArray(expenseCategories)) {
-  //     const updated = [...expenseCategories]
-  //     updated[editingCategoryIndex] = editCategoryValue.trim()
-  //     setExpenseCategories(updated)
-  //     safeLocalStorage.setItem("expenseCategories", JSON.stringify(updated))
-  //     setEditingCategoryIndex(null)
-  //     setEditCategoryValue("")
-  //   }
-  // }
-
-  // const cancelEditCategory = () => {
-  //   setEditingCategoryIndex(null)
-  //   setEditCategoryValue("")
-  // }
-
-  // const removeExpenseCategory = (index: number) => {
-  //   if (!Array.isArray(expenseCategories)) return
-
-  //   const updated = expenseCategories.filter((_, i) => i !== index)
-  //   setExpenseCategories(updated)
-  //   safeLocalStorage.setItem("expenseCategories", JSON.stringify(updated))
-  // }
-
-  // // Weekly payables functions
-  // const addPayable = () => {
-  //   if (newPayable.name && newPayable.amount) {
-  //     const newId = Date.now()
-  //     const autoColor = getAutoColor(Array.isArray(weeklyPayables) ? weeklyPayables.length : 0)
-
-  //     setWeeklyPayables([
-  //       ...(Array.isArray(weeklyPayables) ? weeklyPayables : []),
-  //       {
-  //         ...newPayable,
-  //         amount: safeNumber(newPayable.amount),
-  //         id: newId,
-  //         paidCount: 0,
-  //         color: autoColor,
-  //       },
-  //     ])
-  //     setNewPayable({
-  //       name: "",
-  //       amount: "",
-  //       dueDay: "Saturday", // Changed default to Saturday
-  //       status: "pending",
-  //       week: "This Week",
-  //       frequency: "weekly",
-  //       paidCount: 0,
-  //     })
-  //   }
-  // }
-
-  // const startEditingPayable = (payable: any) => {
-  //   if (!payable) return
-  //   setEditingPayable(payable.id)
-  //   setEditPayableData({ ...payable })
-  // }
-
-  // const saveEditPayable = () => {
-  //   if (!Array.isArray(weeklyPayables)) return
-
-  //   const updated = weeklyPayables.map((p) =>
-  //     p && p.id === editingPayable ? { ...editPayableData, amount: safeNumber(editPayableData.amount) } : p,
-  //   )
-  //   setWeeklyPayables(updated)
-  //   setEditingPayable(null)
-  //   setEditPayableData({})
-  // }
-
-  // const cancelEditPayable = () => {
-  //   setEditingPayable(null)
-  //   setEditPayableData({})
-  // }
-
-  // const removePayable = (id: number) => {
-  //   if (!Array.isArray(weeklyPayables)) return
-  //   setWeeklyPayables(weeklyPayables.filter((p) => p && p.id !== id))
-  // }
-
-  // const markPayableAsPaid = (id: number) => {
-  //   if (!Array.isArray(weeklyPayables)) return
-
-  //   const updated = weeklyPayables.map((payable) => {
-  //     if (payable && payable.id === id) {
-  //       const newPaidCount = safeNumber(payable.paidCount) + 1
-  //       let newStatus = "paid"
-
-  //       // Smart completion logic with bi-weekly scheduling
-  //       if (payable.frequency === "twice-monthly") {
-  //         const currentWeek = 1 // This would need to be calculated based on current date
-  //         const schedule = getBiWeeklySchedule(currentWeek, currentMonthInfo.weeks.length)
-
-  //         if (newPaidCount >= 2) {
-  //           newStatus = "completed"
-  //         }
-  //       } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
-  //         newStatus = "completed"
-  //       }
-
-  //       return {
-  //         ...payable,
-  //         status: newStatus,
-  //         paidCount: newPaidCount,
-  //       }
-  //     }
-  //     return payable
-  //   })
-  //   setWeeklyPayables(updated)
-  // }
-
-  // const colorOptions = [
-  //   { value: "from-red-500 to-pink-500", label: "Red to Pink" },
-  //   { value: "from-blue-500 to-indigo-500", label: "Blue to Indigo" },
-  //   { value: "from-green-500 to-emerald-500", label: "Green to Emerald" },
-  //   { value: "from-purple-500 to-violet-500", label: "Purple to Violet" },
-  //   { value: "from-yellow-500 to-orange-500", label: "Yellow to Orange" },
-  //   { value: "from-teal-500 to-cyan-500", label: "Teal to Cyan" },
-  // ]
-
-  // // Generate week summary when selected
-  // const handleWeekSelect = (weekRange: string) => {
-  //   const summary = calculateWeekSummary(
-  //     weekRange,
-  //     transactions || [],
-  //     dailyIncome || [],
-  //     weeklyPayables || [],
-  //     budgetCategories || [],
-  //   )
-  //   setSelectedWeekSummary(summary)
-  // }
-
-  // // Budget Categories
-  // const handleAddBudgetCategory = () => {
-  //   if (!newCategory.name || !newCategory.budgeted) return
-
-  //   const category = {
-  //     id: Date.now(),
-  //     name: newCategory.name,
-  //     budgeted: safeNumber(newCategory.budgeted),
-  //     spent: 0,
-  //     color: newCategory.color,
-  //   }
-
-  //   setBudgetCategories([...(Array.isArray(budgetCategories) ? budgetCategories : []), category])
-  //   setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  // }
-
-  // const handleEditBudgetCategory = (category: any) => {
-  //   if (!category) return
-  //   setEditingBudgetCategory(category)
-  //   setNewCategory({
-  //     name: category.name || "",
-  //     budgeted: (category.budgeted || 0).toString(),
-  //     color: category.color || "from-blue-500 to-indigo-500",
-  //   })
-  // }
-
-  // const handleUpdateBudgetCategory = () => {
-  //   if (!newCategory.name || !newCategory.budgeted || !editingBudgetCategory) return
-  //   if (!Array.isArray(budgetCategories)) return
-
-  //   const updatedCategories = budgetCategories.map((cat) =>
-  //     cat && cat.id === editingBudgetCategory.id
-  //       ? {
-  //           ...cat,
-  //           name: newCategory.name,
-  //           budgeted: safeNumber(newCategory.budgeted),
-  //           color: newCategory.color,
-  //         }
-  //       : cat,
-  //   )
-
-  //   setBudgetCategories(updatedCategories)
-  //   setEditingBudgetCategory(null)
-  //   setNewCategory({ name: "", budgeted: "", color: "from-blue-500 to-indigo-500" })
-  // }
-
-  // const handleDeleteBudgetCategory = (categoryId: number) => {
-  //   if (typeof window !== "undefined" && window.confirm("Delete this category?")) {
-  //     if (!Array.isArray(budgetCategories)) return
-  //     setBudgetCategories(budgetCategories.filter((cat) => cat && cat.id !== categoryId))
-  //   }
-  // }
-
-  // // Safe data access with defaults
-  // const safeDashboardData = dashboardData || {}
-  // const safeBudgetCategories = Array.isArray(budgetCategories) ? budgetCategories : []
-  // const safeWeeklyPayables = Array.isArray(weeklyPayables) ? weeklyPayables : []
-  // const safeTransactions = Array.isArray(transactions) ? transactions : []
-  // const safeDailyIncome = Array.isArray(dailyIncome) ? dailyIncome : []
-  // const safeExpenseCategories = Array.isArray(expenseCategories) ? expenseCategories : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1135,8 +611,8 @@ export function SettingsDialog({
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span>Expense Categories</span>
-                        <Badge>{safeExpenseCategories.length}</Badge>
+                        <span>Monthly Payables</span>
+                        <Badge>{monthlyPayables.length}</Badge>
                       </div>
                       <div className="flex justify-between">
                         <span>Work Days This Week</span>
@@ -1291,6 +767,187 @@ export function SettingsDialog({
             </TabsContent>
 
             <TabsContent value="payables" className="space-y-4 mt-0">
+              {/* Monthly Payables Section */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-purple-600" />
+                    Monthly Bills (Fixed Day)
+                  </CardTitle>
+                  <CardDescription>Bills that repeat every month on a specific day</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Add New Monthly Payable */}
+                  <div className="bg-purple-50 p-4 rounded-lg space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="monthly-name">Bill Name</Label>
+                        <Input
+                          id="monthly-name"
+                          value={newMonthlyPayable.name}
+                          onChange={(e) => setNewMonthlyPayable({ ...newMonthlyPayable, name: e.target.value })}
+                          placeholder="e.g., Rent, Utilities"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="monthly-amount">Amount</Label>
+                        <Input
+                          id="monthly-amount"
+                          type="number"
+                          value={newMonthlyPayable.amount || ""}
+                          onChange={(e) =>
+                            setNewMonthlyPayable({ ...newMonthlyPayable, amount: Number(e.target.value) })
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="monthly-day">Day of Month (1-31)</Label>
+                      <Select
+                        value={newMonthlyPayable.dayOfMonth.toString()}
+                        onValueChange={(value) =>
+                          setNewMonthlyPayable({ ...newMonthlyPayable, dayOfMonth: Number(value) })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                            <SelectItem key={day} value={day.toString()}>
+                              {day}
+                              {day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th"} of every month
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button onClick={addMonthlyPayable} className="w-full bg-purple-600">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Monthly Bill
+                    </Button>
+                  </div>
+
+                  {/* Existing Monthly Payables */}
+                  {monthlyPayables.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No monthly bills set up yet.</p>
+                      <p className="text-sm">Add monthly bills above to track recurring payments.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {monthlyPayables.map((payable) => (
+                        <div key={payable.id} className="border rounded-lg p-4">
+                          {editingMonthlyPayable === payable.id ? (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <Input
+                                  value={payable.name || ""}
+                                  onChange={(e) =>
+                                    setMonthlyPayables(
+                                      monthlyPayables.map((p) =>
+                                        p.id === payable.id ? { ...p, name: e.target.value } : p,
+                                      ),
+                                    )
+                                  }
+                                />
+                                <Input
+                                  type="number"
+                                  value={payable.amount || ""}
+                                  onChange={(e) =>
+                                    setMonthlyPayables(
+                                      monthlyPayables.map((p) =>
+                                        p.id === payable.id ? { ...p, amount: Number(e.target.value) } : p,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Select
+                                  value={payable.dayOfMonth.toString()}
+                                  onValueChange={(value) =>
+                                    setMonthlyPayables(
+                                      monthlyPayables.map((p) =>
+                                        p.id === payable.id ? { ...p, dayOfMonth: Number(value) } : p,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                                      <SelectItem key={day} value={day.toString()}>
+                                        {day}
+                                        {day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th"}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={() => setEditingMonthlyPayable(null)}>
+                                  <Save className="w-3 h-3 mr-1" />
+                                  Save
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setEditingMonthlyPayable(null)}>
+                                  <X className="w-3 h-3 mr-1" />
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex justify-between items-center mb-2">
+                                <div>
+                                  <span className="font-medium">{payable.name}</span>
+                                  <div className="text-sm text-gray-600">
+                                    {currency}
+                                    {safeToLocaleString(payable.amount)} • Every {payable.dayOfMonth}
+                                    {payable.dayOfMonth === 1
+                                      ? "st"
+                                      : payable.dayOfMonth === 2
+                                        ? "nd"
+                                        : payable.dayOfMonth === 3
+                                          ? "rd"
+                                          : "th"}
+                                  </div>
+                                  {/* Show if due this week */}
+                                  {getMonthlyPayablesForCurrentWeek().some((p) => p.id === payable.id) && (
+                                    <Badge className="bg-orange-100 text-orange-800 text-xs mt-1">Due This Week</Badge>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setEditingMonthlyPayable(payable.id)}
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => deleteMonthlyPayable(payable.id)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Add New Weekly Payable */}
               <Card>
                 <CardHeader>
@@ -1326,7 +983,7 @@ export function SettingsDialog({
                       <Label htmlFor="payable-day">Due Day</Label>
                       <Select
                         value={newPayable.dueDay}
-                        onChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
+                        onValueChange={(value) => setNewPayable({ ...newPayable, dueDay: value })}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -1346,7 +1003,7 @@ export function SettingsDialog({
                       <Label htmlFor="payable-frequency">Frequency</Label>
                       <Select
                         value={newPayable.frequency}
-                        onChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
+                        onValueChange={(value) => setNewPayable({ ...newPayable, frequency: value })}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -1354,7 +1011,6 @@ export function SettingsDialog({
                         <SelectContent>
                           <SelectItem value="weekly">Weekly</SelectItem>
                           <SelectItem value="twice-monthly">Twice Monthly</SelectItem>
-                          <SelectItem value="monthly">Monthly</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1411,7 +1067,7 @@ export function SettingsDialog({
                               <div className="grid grid-cols-2 gap-3">
                                 <Select
                                   value={payable?.dueDay || "Saturday"}
-                                  onChange={(value) =>
+                                  onValueChange={(value) =>
                                     setWeeklyPayables(
                                       safeWeeklyPayables.map((p) =>
                                         p && p.id === payable?.id ? { ...p, dueDay: value } : p,
@@ -1434,7 +1090,7 @@ export function SettingsDialog({
                                 </Select>
                                 <Select
                                   value={payable?.frequency || "weekly"}
-                                  onChange={(value) =>
+                                  onValueChange={(value) =>
                                     setWeeklyPayables(
                                       safeWeeklyPayables.map((p) =>
                                         p && p.id === payable?.id ? { ...p, frequency: value } : p,
@@ -1448,7 +1104,6 @@ export function SettingsDialog({
                                   <SelectContent>
                                     <SelectItem value="weekly">Weekly</SelectItem>
                                     <SelectItem value="twice-monthly">Twice Monthly</SelectItem>
-                                    <SelectItem value="monthly">Monthly</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -1506,9 +1161,6 @@ export function SettingsDialog({
                   )}
                 </CardContent>
               </Card>
-
-              {/* Biweekly Scheduler */}
-              <BiweeklyScheduler />
             </TabsContent>
 
             <TabsContent value="goals" className="space-y-4 mt-0">
@@ -1564,7 +1216,7 @@ export function SettingsDialog({
                             <div className="flex items-center gap-2">
                               <Switch
                                 checked={Boolean(day?.isWorkDay)}
-                                onChange={(checked) => updateDailyGoal(day?.day, checked)}
+                                onCheckedChange={(checked) => updateDailyGoal(day?.day, checked)}
                               />
                               <Label className="text-sm">Work Day</Label>
                             </div>
@@ -1860,7 +1512,7 @@ export function SettingsDialog({
                     </div>
                     <div className="flex justify-between">
                       <span>Last Updated</span>
-                      <span className="text-gray-600">Enhanced Notifications</span>
+                      <span className="text-gray-600">Monthly Payables Only</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Data Storage</span>

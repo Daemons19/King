@@ -7,6 +7,65 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Bell, BellOff, Calendar, CheckCircle, Clock, CreditCard, DollarSign } from "lucide-react"
 
+// Helper function to get current Manila time
+const getManilaTime = () => {
+  return new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+}
+
+// Helper function to get week start date in Manila
+const getWeekStartManila = () => {
+  const now = new Date()
+  const manilaDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+  const dayOfWeek = manilaDate.getDay()
+  const diff = manilaDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Monday as start
+  const weekStart = new Date(manilaDate.setDate(diff))
+  return weekStart.toISOString().split("T")[0]
+}
+
+// Helper function to check if date is in current week
+const isDateInCurrentWeek = (dateString: string) => {
+  const date = new Date(dateString)
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6) // Sunday
+  return date >= weekStart && date <= weekEnd
+}
+
+// Helper function to get current month info
+const getCurrentMonthInfo = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const monthName = now.toLocaleString("default", { month: "long" })
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  return { year, month, monthName, daysInMonth }
+}
+
+// Safe localStorage access
+const safeLocalStorage = {
+  getItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+}
+
 interface WeeklyPayablesCardProps {
   weeklyPayables: any[]
   setWeeklyPayables: (payables: any[]) => void
@@ -36,8 +95,37 @@ export function WeeklyPayablesCard({
     }
   }
 
+  // Get monthly payables that fall within current week
+  const getMonthlyPayablesForCurrentWeek = () => {
+    const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "[]")
+    const currentMonthInfo = getCurrentMonthInfo()
+
+    return monthlyPayables
+      .filter((payable: any) => {
+        // Create date for this month's due date
+        const dueDate = new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth)
+        const dueDateString = dueDate.toISOString().split("T")[0]
+
+        // Check if due date falls in current week
+        return isDateInCurrentWeek(dueDateString)
+      })
+      .map((payable: any) => ({
+        ...payable,
+        week: "This Week",
+        source: "monthly",
+        dueDay: new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth).toLocaleDateString(
+          "en-US",
+          { weekday: "long" },
+        ),
+        date: new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth).toISOString().split("T")[0],
+      }))
+  }
+
+  // Combine weekly payables with monthly payables that fall in current week
+  const allCurrentWeekPayables = [...weeklyPayables, ...getMonthlyPayablesForCurrentWeek()]
+
   const markAsPaid = (id: number) => {
-    const payable = weeklyPayables.find((p) => p.id === id)
+    const payable = allCurrentWeekPayables.find((p) => p.id === id)
     if (!payable) return
 
     // Call the payment handler if provided (for balance deduction)
@@ -69,15 +157,15 @@ export function WeeklyPayablesCard({
     }
   }
 
-  const pendingPayables = weeklyPayables.filter((p) => p.status === "pending")
+  const pendingPayables = allCurrentWeekPayables.filter((p) => p.status === "pending")
   const totalPending = pendingPayables.reduce((sum, p) => sum + p.amount, 0)
-  const totalPayables = weeklyPayables.reduce((sum, p) => sum + p.amount, 0)
+  const totalPayables = allCurrentWeekPayables.reduce((sum, p) => sum + p.amount, 0)
   const completionRate = totalPayables > 0 ? ((totalPayables - totalPending) / totalPayables) * 100 : 0
 
-  // Group payables by day for Saturday focus and monthly payables
-  const saturdayPayables = weeklyPayables.filter((p) => p.dueDay === "Saturday")
-  const monthlyPayables = weeklyPayables.filter((p) => p.source === "monthly")
-  const otherPayables = weeklyPayables.filter((p) => p.dueDay !== "Saturday" && p.source !== "monthly")
+  // Group payables by source and day
+  const saturdayPayables = allCurrentWeekPayables.filter((p) => p.dueDay === "Saturday" && p.source !== "monthly")
+  const monthlyPayables = allCurrentWeekPayables.filter((p) => p.source === "monthly")
+  const otherPayables = allCurrentWeekPayables.filter((p) => p.dueDay !== "Saturday" && p.source !== "monthly")
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -132,7 +220,7 @@ export function WeeklyPayablesCard({
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant="outline" className="text-xs border-purple-300 text-purple-700">
-                      Monthly
+                      Monthly (Day {payable.dayOfMonth})
                     </Badge>
                     {payable.date && (
                       <span className="text-xs text-gray-500">Due: {new Date(payable.date).toLocaleDateString()}</span>
@@ -275,19 +363,19 @@ export function WeeklyPayablesCard({
         )}
 
         {/* Empty State */}
-        {weeklyPayables.length === 0 && (
+        {allCurrentWeekPayables.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>No weekly bills set up yet.</p>
+            <p>No bills due this week.</p>
             <p className="text-sm">Add bills in Settings to track your payments.</p>
           </div>
         )}
 
         {/* Notification Status */}
-        {weeklyPayables.length > 0 && (
+        {allCurrentWeekPayables.length > 0 && (
           <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
             <span>{notificationsEnabled ? "Notifications enabled" : "Notifications disabled"}</span>
-            <span>Saturday is default day</span>
+            <span>Auto-includes monthly bills due this week</span>
           </div>
         )}
       </CardContent>
