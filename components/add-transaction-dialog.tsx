@@ -1,8 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, Button } from "@headlessui/react"
-import { DollarSign } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Plus, Minus } from "lucide-react"
 
 interface AddTransactionDialogProps {
   open: boolean
@@ -12,8 +17,6 @@ interface AddTransactionDialogProps {
   expenseCategories: string[]
   currency: string
   defaultDescription?: string
-  dailyIncome?: any[]
-  setDailyIncome?: (income: any[]) => void
 }
 
 export function AddTransactionDialog({
@@ -23,154 +26,128 @@ export function AddTransactionDialog({
   budgetCategories,
   expenseCategories,
   currency,
-  defaultDescription = "",
-  dailyIncome = [],
-  setDailyIncome,
+  defaultDescription = "work",
 }: AddTransactionDialogProps) {
-  const [formData, setFormData] = useState({
-    description: "",
-    amount: "",
-    category: "",
-    date: new Date().toISOString().split("T")[0],
-  })
-
-  const [showIncomeConfirmation, setShowIncomeConfirmation] = useState(false)
-  const [pendingIncomeTransaction, setPendingIncomeTransaction] = useState<any>(null)
-
-  const getCurrentDayManila = () => {
-    return new Date().toLocaleDateString("en-US", {
-      timeZone: "Asia/Manila",
-      weekday: "short",
-    })
-  }
+  const [activeTab, setActiveTab] = useState("income")
+  const [amount, setAmount] = useState("")
+  const [category, setCategory] = useState("")
 
   const handleSubmit = (type: "income" | "expense") => {
-    if (!formData.amount) return
+    if (!amount || !category) return
 
     const transaction = {
-      id: Date.now(),
-      description: formData.description || (type === "income" ? defaultDescription || "work" : ""),
-      amount: type === "expense" ? -Math.abs(Number(formData.amount)) : Number(formData.amount),
+      amount: type === "expense" ? -Math.abs(Number.parseFloat(amount)) : Number.parseFloat(amount),
       type,
-      category: formData.category || (type === "income" ? "Work" : "Other"),
-      date: formData.date,
-    }
-
-    // Check if this is income for today
-    const today = getCurrentDayManila()
-    const isToday =
-      new Date(formData.date).toLocaleDateString("en-US", {
-        timeZone: "Asia/Manila",
-        weekday: "short",
-      }) === today
-
-    if (type === "income" && isToday && dailyIncome && setDailyIncome) {
-      // Check if today is already locked
-      const todayData = dailyIncome.find((day) => day.day === today)
-      if (todayData && todayData.locked) {
-        // Show override confirmation
-        if (
-          window.confirm(
-            `Today's income is locked at ${currency}${todayData.amount.toLocaleString()}. Do you want to update it?`,
-          )
-        ) {
-          // Update locked amount
-          const updated = dailyIncome.map((day) =>
-            day.day === today ? { ...day, amount: day.amount + transaction.amount } : day,
-          )
-          setDailyIncome(updated)
-          onAddTransaction(transaction)
-          resetForm()
-          onOpenChange(false)
-        }
-        return
-      } else {
-        // Show confirmation dialog for today's income
-        setPendingIncomeTransaction(transaction)
-        setShowIncomeConfirmation(true)
-        return
-      }
-    }
-
-    // Regular transaction processing
-    onAddTransaction(transaction)
-    resetForm()
-    onOpenChange(false)
-  }
-
-  const handleIncomeConfirmation = (isComplete: boolean) => {
-    if (!pendingIncomeTransaction || !dailyIncome || !setDailyIncome) return
-
-    const today = getCurrentDayManila()
-
-    // Update daily income
-    const updated = dailyIncome.map((day) =>
-      day.day === today
-        ? {
-            ...day,
-            amount: day.amount + pendingIncomeTransaction.amount,
-            locked: isComplete, // Lock if user confirms this is all for today
-          }
-        : day,
-    )
-    setDailyIncome(updated)
-
-    // Add transaction
-    onAddTransaction(pendingIncomeTransaction)
-
-    // Reset and close
-    setPendingIncomeTransaction(null)
-    setShowIncomeConfirmation(false)
-    resetForm()
-    onOpenChange(false)
-  }
-
-  const resetForm = () => {
-    setFormData({
-      description: "",
-      amount: "",
-      category: "",
+      category,
+      description: type === "income" ? defaultDescription : category, // Use default for income, category for expense
       date: new Date().toISOString().split("T")[0],
-    })
+    }
+
+    onAddTransaction(transaction)
+
+    // Reset form
+    setAmount("")
+    setCategory("")
+    onOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onClose={onOpenChange}>
-      {/* Dialog content here */}
-      {/* Income Confirmation Dialog */}
-      {showIncomeConfirmation && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10001] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                <DollarSign className="w-8 h-8 text-green-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800">Income Added for Today</h3>
-                <p className="text-gray-600 mt-2">
-                  You've added {currency}
-                  {pendingIncomeTransaction?.amount.toLocaleString()} to today's income.
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Is this all you earned today? If yes, we'll lock today's total and expect future income starting
-                  tomorrow.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <Button onClick={() => handleIncomeConfirmation(false)} variant="outline" className="flex-1">
-                  More Income Today
-                </Button>
-                <Button
-                  onClick={() => handleIncomeConfirmation(true)}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  That's All for Today
-                </Button>
-              </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Transaction</DialogTitle>
+        </DialogHeader>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="income" className="flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Income
+            </TabsTrigger>
+            <TabsTrigger value="expense" className="flex items-center gap-2">
+              <Minus className="w-4 h-4" />
+              Expense
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="income" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="income-amount">Amount ({currency})</Label>
+              <Input
+                id="income-amount"
+                type="number"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
             </div>
-          </div>
-        </div>
-      )}
+
+            <div className="space-y-2">
+              <Label htmlFor="income-category">Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Work">Work</SelectItem>
+                  <SelectItem value="Freelance">Freelance</SelectItem>
+                  <SelectItem value="Business">Business</SelectItem>
+                  <SelectItem value="Investment">Investment</SelectItem>
+                  <SelectItem value="Gift">Gift</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={() => handleSubmit("income")}
+              className="w-full bg-green-600 hover:bg-green-700"
+              disabled={!amount || !category}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Income
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="expense" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="expense-amount">Amount ({currency})</Label>
+              <Input
+                id="expense-amount"
+                type="number"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="expense-category">Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {expenseCategories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={() => handleSubmit("expense")}
+              className="w-full bg-red-600 hover:bg-red-700"
+              disabled={!amount || !category}
+            >
+              <Minus className="w-4 h-4 mr-2" />
+              Add Expense
+            </Button>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
     </Dialog>
   )
 }

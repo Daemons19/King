@@ -143,7 +143,6 @@ const initializeDailyIncome = () => {
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
     isWorkDay: dayInfo.day !== "Sun", // Sunday is non-workday by default
-    locked: false, // Default locked status
   }))
 }
 
@@ -233,7 +232,6 @@ export default function BudgetingApp() {
             isToday: dayInfo.isToday,
             isPast: dayInfo.isPast,
             isWorkDay: savedDay?.isWorkDay !== undefined ? savedDay.isWorkDay : dayInfo.day !== "Sun",
-            locked: savedDay?.locked || false, // Include locked status
           }
         })
         setDailyIncome(updatedDailyIncome)
@@ -335,26 +333,12 @@ export default function BudgetingApp() {
   const pendingPayables = allCurrentWeekPayables.filter((p) => p?.status === "pending")
   const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
 
-  // Update the remaining work days calculation to use locked values for predictions
+  // Calculate remaining work days and their potential earnings
   const remainingWorkDays = workDays.filter((day) => !day?.isPast && !day?.isToday)
-  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => {
-    // Use locked amount if available, otherwise use goal for prediction
-    return sum + (day?.locked ? day?.amount : day?.goal || 0)
-  }, 0)
+  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
 
-  // Update projected savings calculation to use locked values
-  const getProjectedEarnings = () => {
-    return workDays.reduce((sum, day) => {
-      if (day?.isPast || day?.isToday) {
-        return sum + (day?.amount || 0) // Use actual earnings for past/today
-      } else {
-        return sum + (day?.locked ? day?.amount : day?.goal || 0) // Use locked or goal for future
-      }
-    }, 0)
-  }
-
-  const projectedWeeklyEarnings = getProjectedEarnings()
-  const thisWeekProjectedSavings = projectedWeeklyEarnings - totalWeeklyPayables - currentWeekExpenses
+  // This Week's Projected Savings calculation
+  const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
 
   // Current actual balance calculation
   const totalIncome = Array.isArray(transactions)
@@ -681,16 +665,13 @@ export default function BudgetingApp() {
                               : day?.isPast
                                 ? "bg-gradient-to-r from-gray-50 to-blue-50"
                                 : "bg-gradient-to-r from-yellow-50 to-orange-50"
-                          } ${!day?.isWorkDay ? "opacity-60" : ""} ${day?.locked ? "border-2 border-green-300" : ""}`}
+                          } ${!day?.isWorkDay ? "opacity-60" : ""}`}
                         >
                           <div>
                             <p className="font-medium text-gray-800 flex items-center gap-2">
                               {day?.day} {day?.isToday && "(Today)"}
                               {!day?.isWorkDay && (
                                 <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Rest Day</span>
-                              )}
-                              {day?.locked && (
-                                <span className="text-xs bg-green-200 text-green-700 px-2 py-1 rounded">🔒 Locked</span>
                               )}
                             </p>
                             <p className="text-xs text-gray-600">
@@ -709,7 +690,7 @@ export default function BudgetingApp() {
                                     : day?.isPast
                                       ? "text-red-600"
                                       : "text-orange-600"
-                              } ${day?.locked ? "text-green-700" : ""}`}
+                              }`}
                             >
                               {currency}
                               {safeToLocaleString(day?.amount)}
@@ -722,7 +703,6 @@ export default function BudgetingApp() {
                             {day?.isPast && (day?.amount || 0) === 0 && day?.isWorkDay && (
                               <p className="text-xs text-red-500">No earnings</p>
                             )}
-                            {day?.locked && <p className="text-xs text-green-600">Confirmed</p>}
                           </div>
                         </div>
                       ))}
@@ -873,8 +853,6 @@ export default function BudgetingApp() {
           expenseCategories={expenseCategories}
           currency={currency}
           defaultDescription="work" // Set default description to "work"
-          dailyIncome={dailyIncome}
-          setDailyIncome={setDailyIncome}
         />
 
         <SettingsDialog
