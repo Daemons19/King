@@ -1,11 +1,11 @@
 {
-  "name": "Budget Tracker",
+  "name": "Daily Budget Tracker",
   "short_name": "Budget Tracker",
-  "description": "A comprehensive budget tracking PWA for managing income, expenses, and financial goals",
+  "description": "Track your daily income, expenses, and bills with real-time notifications",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#3b82f6",
+  "theme_color": "#8b5cf6",
   "orientation": "portrait-primary",
   "scope": "/",
   "lang": "en",
@@ -15,27 +15,13 @@
       "src": "/placeholder-logo.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     },
     {
       "src": "/placeholder-logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable any"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/placeholder.jpg",
-      "sizes": "1280x720",
-      "type": "image/jpeg",
-      "form_factor": "wide"
-    },
-    {
-      "src": "/placeholder.jpg",
-      "sizes": "750x1334",
-      "type": "image/jpeg",
-      "form_factor": "narrow"
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -47,29 +33,31 @@
       "icons": [
         {
           "src": "/placeholder-logo.png",
-          "sizes": "96x96"
+          "sizes": "192x192"
         }
       ]
     },
     {
-      "name": "Add Expense",
-      "short_name": "Expense",
-      "description": "Quickly add expense entry",
-      "url": "/?action=add-expense",
+      "name": "Pay Bills",
+      "short_name": "Bills",
+      "description": "View and pay bills",
+      "url": "/?tab=payables",
       "icons": [
         {
           "src": "/placeholder-logo.png",
-          "sizes": "96x96"
+          "sizes": "192x192"
         }
       ]
     }
   ],
   "prefer_related_applications": false,
   "related_applications": [],
-  "edge_side_panel": {
-    "preferred_width": 400
-  },
-  "launch_handler": {
-    "client_mode": "navigate-existing"
-  }
+  "screenshots": [
+    {
+      "src": "/placeholder.jpg",
+      "sizes": "540x720",
+      "type": "image/jpeg",
+      "form_factor": "narrow"
+    }
+  ]
 }
