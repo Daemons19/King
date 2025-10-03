@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -17,7 +16,6 @@ import {
   Bell,
   Receipt,
 } from "lucide-react"
-import { SpendingChart } from "../components/spending-chart"
 import { TransactionList } from "../components/transaction-list"
 import { SettingsDialog } from "../components/settings-dialog"
 import { DailyIncomeChart } from "../components/daily-income-chart"
@@ -309,7 +307,7 @@ export default function BudgetingApp() {
         .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
 
-  // Get this week's expense transactions for the new expenses list
+  // Get this week's expense transactions for the expenses list
   const thisWeekExpenseTransactions = Array.isArray(transactions)
     ? transactions
         .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
@@ -364,25 +362,24 @@ export default function BudgetingApp() {
   // This Week's Projected Savings calculation
   const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
 
-  // NEW BALANCE LOGIC:
+  // FIXED BALANCE LOGIC:
   // Starting Balance - fixed, never changes
   const startingBalance = dashboardData?.startingBalance || 0
 
   // Calculate Cash on Hand (current cash)
-  // Cash on Hand = Starting Balance + Total Income - Total Expenses - Paid Bills
+  // Cash on Hand = Starting Balance + Total Income - Total Expenses
+  // Note: We do NOT subtract paidPayablesAmount because bill payments are already recorded as expense transactions
   const totalIncome = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
     : 0
   const totalExpenses = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "expense").reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
-  const paidPayablesAmount = Array.isArray(weeklyPayables)
-    ? weeklyPayables.filter((p) => p?.status === "paid").reduce((sum, p) => sum + (p?.amount || 0), 0)
-    : 0
 
-  const cashOnHand = startingBalance + totalIncome - totalExpenses - paidPayablesAmount
+  // FIXED: Removed paidPayablesAmount subtraction to prevent double-counting
+  const cashOnHand = startingBalance + totalIncome - totalExpenses
 
-  // Handle payment - ONLY deduct from cash on hand, NOT starting balance
+  // Handle payment - bill payments are recorded as expense transactions only
   const handlePayment = (payableId: number, amount: number) => {
     // Update payable status
     const updatedPayables = weeklyPayables.map((payable) => {
@@ -409,7 +406,7 @@ export default function BudgetingApp() {
     setWeeklyPayables(updatedPayables)
 
     // Add payment as expense transaction
-    // This will automatically reduce cash on hand through the calculation
+    // This will automatically reduce cash on hand through the totalExpenses calculation
     const paymentTransaction = {
       id: Date.now(),
       description: `Payment: ${weeklyPayables.find((p) => p.id === payableId)?.name || "Bill"}`,
@@ -458,35 +455,6 @@ export default function BudgetingApp() {
     }
   }
 
-  // Clear specific data functions
-  const clearTransactions = () => {
-    if (typeof window !== "undefined" && window.confirm("Clear all transactions?")) {
-      setTransactions([])
-    }
-  }
-
-  const clearBudgetCategories = () => {
-    if (typeof window !== "undefined" && window.confirm("Clear all budget categories?")) {
-      setBudgetCategories([])
-    }
-  }
-
-  const clearWeeklyPayables = () => {
-    if (typeof window !== "undefined" && window.confirm("Clear all weekly payables?")) {
-      setWeeklyPayables([])
-    }
-  }
-
-  const clearDailyIncome = () => {
-    if (typeof window !== "undefined" && window.confirm("Reset all daily income data for this week?")) {
-      const resetIncome = dailyIncome.map((day) => ({
-        ...day,
-        amount: 0,
-      }))
-      setDailyIncome(resetIncome)
-    }
-  }
-
   // Show loading state until client-side hydration is complete
   if (!isClient) {
     return (
@@ -507,7 +475,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v97</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v98</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -566,25 +534,9 @@ export default function BudgetingApp() {
 
         {/* Main Content with bottom padding for navigation */}
         <div className="p-4 pb-28">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5 bg-white/90 p-1 rounded-lg shadow-lg">
-              <TabsTrigger value="home" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
-                Home
-              </TabsTrigger>
-              <TabsTrigger value="income" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
-                Income
-              </TabsTrigger>
-              <TabsTrigger value="expenses" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
-                Expenses
-              </TabsTrigger>
-              <TabsTrigger value="payables" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
-                Bills
-              </TabsTrigger>
-              <TabsTrigger value="transactions" className="data-[state=active]:bg-purple-100 rounded-md text-xs">
-                History
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="home" className="space-y-4 mt-0">
+          {/* HOME TAB */}
+          {activeTab === "home" && (
+            <div className="space-y-4">
               {/* Quick Stats - Real-time with new balance logic */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
@@ -668,9 +620,12 @@ export default function BudgetingApp() {
                   Pay Bills
                 </Button>
               </div>
-            </TabsContent>
+            </div>
+          )}
 
-            <TabsContent value="income" className="space-y-4 mt-0">
+          {/* INCOME TAB */}
+          {activeTab === "income" && (
+            <div className="space-y-4">
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
 
               <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -734,10 +689,12 @@ export default function BudgetingApp() {
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
+          )}
 
-            <TabsContent value="expenses" className="space-y-4 mt-0">
-              {/* NEW: This Week's Expenses List */}
+          {/* EXPENSES TAB - Simplified to only show expenses list */}
+          {activeTab === "expenses" && (
+            <div className="space-y-4">
               <Card className="bg-white/80 backdrop-blur-sm border-0">
                 <CardHeader>
                   <CardTitle className="text-gray-800 flex items-center gap-2">
@@ -789,64 +746,27 @@ export default function BudgetingApp() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          )}
 
-              <SpendingChart budgetCategories={updatedBudgetCategories} currency={currency} />
-
-              <Card className="bg-white/80 backdrop-blur-sm border-0">
-                <CardHeader>
-                  <CardTitle className="text-gray-800">Budget Categories</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {updatedBudgetCategories.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p>No budget categories yet.</p>
-                      <p className="text-sm">Add categories in Settings to track your spending.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {updatedBudgetCategories.map((category, index) => {
-                        const percentage = ((category?.spent || 0) / (category?.budgeted || 1)) * 100
-                        const isOverBudget = (category?.spent || 0) > (category?.budgeted || 0)
-
-                        return (
-                          <div key={index} className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium text-gray-800">{category?.name}</span>
-                              <span className={`font-bold ${isOverBudget ? "text-red-600" : "text-gray-800"}`}>
-                                {currency}
-                                {safeToLocaleString(category?.spent)}/{currency}
-                                {safeToLocaleString(category?.budgeted)}
-                              </span>
-                            </div>
-                            <Progress value={Math.min(percentage, 100)} className="h-2" />
-                            {isOverBudget && (
-                              <p className="text-xs text-red-600">
-                                Over by {currency}
-                                {safeToLocaleString((category?.spent || 0) - (category?.budgeted || 0))}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="payables" className="space-y-4 mt-0">
+          {/* PAYABLES TAB */}
+          {activeTab === "payables" && (
+            <div className="space-y-4">
               <WeeklyPayablesCard
                 weeklyPayables={allCurrentWeekPayables}
                 setWeeklyPayables={setWeeklyPayables}
                 currency={currency}
                 onPayment={handlePayment}
               />
-            </TabsContent>
+            </div>
+          )}
 
-            <TabsContent value="transactions" className="space-y-4 mt-0">
+          {/* TRANSACTIONS TAB */}
+          {activeTab === "transactions" && (
+            <div className="space-y-4">
               <TransactionList transactions={transactions} currency={currency} />
-            </TabsContent>
-          </Tabs>
+            </div>
+          )}
         </div>
 
         {/* Bottom Navigation - Fixed with higher z-index */}
@@ -930,7 +850,7 @@ export default function BudgetingApp() {
           budgetCategories={budgetCategories}
           expenseCategories={expenseCategories}
           currency={currency}
-          defaultDescription="work" // Set default description to "work"
+          defaultDescription="work"
         />
 
         <SettingsDialog

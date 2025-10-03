@@ -30,7 +30,7 @@ export function AddTransactionDialog({
 }: AddTransactionDialogProps) {
   const [activeTab, setActiveTab] = useState("income")
   const [amount, setAmount] = useState("")
-  const [category, setCategory] = useState("")
+  const [category, setCategory] = useState("Work") // Pre-fill with "Work" for income
 
   const handleSubmit = (type: "income" | "expense") => {
     if (!amount || !category) return
@@ -39,7 +39,7 @@ export function AddTransactionDialog({
       amount: type === "expense" ? -Math.abs(Number.parseFloat(amount)) : Number.parseFloat(amount),
       type,
       category,
-      description: type === "income" ? defaultDescription : category, // Use default for income, category for expense
+      description: type === "income" ? defaultDescription : category, // Use default "work" for income
       date: new Date().toISOString().split("T")[0],
     }
 
@@ -47,8 +47,18 @@ export function AddTransactionDialog({
 
     // Reset form
     setAmount("")
-    setCategory("")
+    setCategory(type === "income" ? "Work" : "") // Reset to "Work" for income, empty for expense
     onOpenChange(false)
+  }
+
+  // When switching tabs, reset category appropriately
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    if (tab === "income") {
+      setCategory("Work") // Pre-fill "Work" when switching to income tab
+    } else {
+      setCategory("") // Clear category when switching to expense tab
+    }
   }
 
   return (
@@ -58,7 +68,7 @@ export function AddTransactionDialog({
           <DialogTitle>Add Transaction</DialogTitle>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="income" className="flex items-center gap-2">
               <Plus className="w-4 h-4" />
