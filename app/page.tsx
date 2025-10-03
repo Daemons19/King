@@ -2,668 +2,904 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
-  TrendingUp,
   TrendingDown,
-  DollarSign,
-  Calendar,
-  PiggyBank,
   Plus,
   Settings,
-  Sparkles,
-  CheckCircle2,
+  Wallet,
+  Home,
+  DollarSign,
+  CreditCard,
+  TrendingUp,
+  Bell,
+  Receipt,
 } from "lucide-react"
-import { toast } from "@/hooks/use-toast"
-import { WeeklyPayablesCard } from "@/components/weekly-payables-card"
+import { TransactionList } from "../components/transaction-list"
+import { SettingsDialog } from "../components/settings-dialog"
+import { DailyIncomeChart } from "../components/daily-income-chart"
+import { WeeklyPayablesCard } from "../components/weekly-payables-card"
+import { InstallPrompt } from "../components/install-prompt"
 import { AddTransactionDialog } from "@/components/add-transaction-dialog"
-import { SettingsDialog } from "@/components/settings-dialog"
-import { DailyIncomeChart } from "@/components/daily-income-chart"
-import { TransactionList } from "@/components/transaction-list"
-import { AIAssistant } from "@/components/ai-assistant"
+import OfflineIndicator from "@/components/offline-indicator"
+import OptimizedCard from "@/components/optimized-card"
+import NotificationManager from "@/components/notification-manager"
 
-interface Transaction {
-  id: string
-  type: "income" | "expense"
-  amount: number
-  category: string
-  description: string
-  date: string
-  isFinalEarnings?: boolean
+// Helper function to get current Manila time
+const getManilaTime = () => {
+  return new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
 }
 
-interface Payable {
-  id: string
-  name: string
-  amount: number
-  frequency: "weekly" | "monthly"
-  dueDay: string
-  isPaid: boolean
-  paidDate?: string
+// Helper function to get current day of week in Manila
+const getCurrentDayManila = () => {
+  return new Date().toLocaleDateString("en-US", {
+    timeZone: "Asia/Manila",
+    weekday: "short",
+  })
 }
 
-interface DayEarnings {
-  [key: string]: {
-    amount: number
-    isFinal: boolean
+// Helper function to get week start date in Manila
+const getWeekStartManila = () => {
+  const now = new Date()
+  const manilaDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+  const dayOfWeek = manilaDate.getDay()
+  const diff = manilaDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Monday as start
+  const weekStart = new Date(manilaDate.setDate(diff))
+  return weekStart.toISOString().split("T")[0]
+}
+
+// Helper function to get week end date in Manila
+const getWeekEndManila = () => {
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6) // Sunday
+  return weekEnd.toISOString().split("T")[0]
+}
+
+// Helper function to check if date is in current week
+const isDateInCurrentWeek = (dateString: string) => {
+  const date = new Date(dateString)
+  const weekStart = new Date(getWeekStartManila())
+  const weekEnd = new Date(getWeekEndManila())
+  return date >= weekStart && date <= weekEnd
+}
+
+// Helper function to get days of current week with Manila dates
+const getCurrentWeekDays = () => {
+  const weekStart = getWeekStartManila()
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+  const weekDays = []
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(weekStart)
+    date.setDate(date.getDate() + i)
+    weekDays.push({
+      day: days[i],
+      date: date.toISOString().split("T")[0],
+      isToday: days[i] === getCurrentDayManila(),
+      isPast: date < new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }).split(",")[0]),
+    })
   }
+
+  return weekDays
 }
 
-export default function Home() {
-  const [currency] = useState("₱")
-  const [startingBalance, setStartingBalance] = useState(0)
-  const [cashOnHand, setCashOnHand] = useState(0)
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [payables, setPayables] = useState<Payable[]>([])
-  const [workDays, setWorkDays] = useState<string[]>([
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ])
-  const [dailyGoal] = useState(1100)
-  const [dayEarnings, setDayEarnings] = useState<DayEarnings>({})
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [addDialogType, setAddDialogType] = useState<"income" | "expense">("income")
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
+// Default data - focused on daily earnings in PHP with updated daily goal
+const defaultDashboardData = {
+  startingBalance: 12450.75, // This is the fixed starting balance
+  totalBalance: 12450.75,
+  dailyIncomeGoal: 1100.0,
+  weeklyExpenses: 3850.25,
+  weeklyPayables: 1450.0,
+  currency: "₱",
+}
 
-  // Load data from localStorage on mount
+const defaultBudgetCategories = [
+  { id: 1, name: "Food", budgeted: 600, spent: 520, color: "from-emerald-500 to-teal-500" },
+  { id: 2, name: "Transport", budgeted: 320, spent: 265, color: "from-blue-500 to-indigo-500" },
+  { id: 3, name: "Entertainment", budgeted: 240, spent: 180, color: "from-purple-500 to-pink-500" },
+  { id: 4, name: "Shopping", budgeted: 400, spent: 350, color: "from-orange-500 to-red-500" },
+  { id: 5, name: "Bills", budgeted: 800, spent: 720, color: "from-yellow-500 to-orange-500" },
+]
+
+const defaultWeeklyPayables = [
+  { id: 1, name: "Groceries", amount: 500, dueDay: "Monday", status: "pending", week: "This Week" },
+  { id: 2, name: "Gas/Transport", amount: 200, dueDay: "Wednesday", status: "pending", week: "This Week" },
+  { id: 3, name: "Phone Bill", amount: 100, dueDay: "Friday", status: "paid", week: "This Week" },
+  { id: 4, name: "Internet", amount: 150, dueDay: "Sunday", status: "pending", week: "This Week" },
+  { id: 5, name: "Rent Share", amount: 800, dueDay: "Monday", status: "pending", week: "Next Week" },
+]
+
+const defaultTransactions = [
+  {
+    id: 1,
+    description: "Daily Work",
+    amount: 1100,
+    type: "income",
+    category: "Work",
+    date: new Date().toISOString().split("T")[0],
+  },
+  {
+    id: 2,
+    description: "Lunch",
+    amount: -60,
+    type: "expense",
+    category: "Food",
+    date: new Date().toISOString().split("T")[0],
+  },
+]
+
+// Default expense categories
+const defaultExpenseCategories = ["Food", "Transport", "Bills", "Entertainment", "Shopping", "Other"]
+
+// Initialize daily income with current week dates and updated goals
+const initializeDailyIncome = () => {
+  const weekDays = getCurrentWeekDays()
+  return weekDays.map((dayInfo) => ({
+    day: dayInfo.day,
+    amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0,
+    goal: dayInfo.day === "Sun" ? 0 : 1100, // Sunday = 0 (non-workday), others = 1100
+    date: dayInfo.date,
+    isToday: dayInfo.isToday,
+    isPast: dayInfo.isPast,
+    isWorkDay: dayInfo.day !== "Sun", // Sunday is non-workday by default
+  }))
+}
+
+// Safe localStorage access
+const safeLocalStorage = {
+  getItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+  removeItem: (key: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(key)
+    }
+  },
+}
+
+// Safe number formatting function
+const safeToLocaleString = (value: any): string => {
+  const num = Number(value)
+  return isNaN(num) ? "0" : num.toLocaleString()
+}
+
+export default function BudgetingApp() {
+  const [showAddTransaction, setShowAddTransaction] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [activeTab, setActiveTab] = useState("home")
+  const [currentTime, setCurrentTime] = useState("")
+  const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
+  const [isClient, setIsClient] = useState(false)
+
+  // State with localStorage persistence
+  const [dashboardData, setDashboardData] = useState(defaultDashboardData)
+  const [budgetCategories, setBudgetCategories] = useState(defaultBudgetCategories)
+  const [weeklyPayables, setWeeklyPayables] = useState(defaultWeeklyPayables)
+  const [transactions, setTransactions] = useState(defaultTransactions)
+  const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
+  const [expenseCategories, setExpenseCategories] = useState(defaultExpenseCategories)
+
+  // Set client-side flag and initialize time
   useEffect(() => {
-    const savedBalance = localStorage.getItem("startingBalance")
-    const savedCash = localStorage.getItem("cashOnHand")
-    const savedTransactions = localStorage.getItem("transactions")
-    const savedPayables = localStorage.getItem("payables")
-    const savedWorkDays = localStorage.getItem("workDays")
-    const savedDayEarnings = localStorage.getItem("dayEarnings")
-
-    if (savedBalance) setStartingBalance(Number.parseFloat(savedBalance))
-    if (savedCash) setCashOnHand(Number.parseFloat(savedCash))
-    if (savedTransactions) setTransactions(JSON.parse(savedTransactions))
-    if (savedPayables) setPayables(JSON.parse(savedPayables))
-    if (savedWorkDays) setWorkDays(JSON.parse(savedWorkDays))
-    if (savedDayEarnings) setDayEarnings(JSON.parse(savedDayEarnings))
+    setIsClient(true)
+    setCurrentTime(getManilaTime())
   }, [])
 
-  // Save to localStorage whenever data changes
+  // Update time every minute
   useEffect(() => {
-    localStorage.setItem("startingBalance", startingBalance.toString())
-    localStorage.setItem("cashOnHand", cashOnHand.toString())
-    localStorage.setItem("transactions", JSON.stringify(transactions))
-    localStorage.setItem("payables", JSON.stringify(payables))
-    localStorage.setItem("workDays", JSON.stringify(workDays))
-    localStorage.setItem("dayEarnings", JSON.stringify(dayEarnings))
-  }, [startingBalance, cashOnHand, transactions, payables, workDays, dayEarnings])
+    if (!isClient) return
 
-  const getWeekDates = () => {
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const monday = new Date(now)
-    monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
-    monday.setHours(0, 0, 0, 0)
+    const timer = setInterval(() => {
+      setCurrentTime(getManilaTime())
+    }, 60000)
 
-    const dates = []
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(monday)
-      date.setDate(monday.getDate() + i)
-      dates.push(date)
+    return () => clearInterval(timer)
+  }, [isClient])
+
+  // Load data from localStorage on component mount (client-side only)
+  useEffect(() => {
+    if (!isClient) return
+
+    const savedData = safeLocalStorage.getItem("dailyBudgetAppData")
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData)
+        // Ensure startingBalance is preserved
+        const loadedData = parsed.dashboardData || defaultDashboardData
+        if (!loadedData.startingBalance) {
+          loadedData.startingBalance = loadedData.totalBalance || defaultDashboardData.startingBalance
+        }
+        setDashboardData(loadedData)
+        setBudgetCategories(parsed.budgetCategories || defaultBudgetCategories)
+        setWeeklyPayables(parsed.weeklyPayables || defaultWeeklyPayables)
+        setTransactions(parsed.transactions || defaultTransactions)
+
+        // Update daily income with current week structure
+        const savedDailyIncome = parsed.dailyIncome || []
+        const currentWeekDays = getCurrentWeekDays()
+        const updatedDailyIncome = currentWeekDays.map((dayInfo) => {
+          const savedDay = savedDailyIncome.find((d: any) => d.date === dayInfo.date)
+          return {
+            day: dayInfo.day,
+            amount: savedDay?.amount || 0,
+            goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100, // Use workday status to set goal
+            date: dayInfo.date,
+            isToday: dayInfo.isToday,
+            isPast: dayInfo.isPast,
+            isWorkDay: savedDay?.isWorkDay !== undefined ? savedDay.isWorkDay : dayInfo.day !== "Sun",
+          }
+        })
+        setDailyIncome(updatedDailyIncome)
+      } catch (error) {
+        console.error("Error loading saved data:", error)
+      }
     }
-    return dates
-  }
 
-  const weekDates = getWeekDates()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+    // Load expense categories
+    const savedExpenseCategories = safeLocalStorage.getItem("expenseCategories")
+    if (savedExpenseCategories) {
+      try {
+        setExpenseCategories(JSON.parse(savedExpenseCategories))
+      } catch (error) {
+        console.error("Error loading expense categories:", error)
+      }
+    }
+  }, [isClient])
 
-  const getCurrentWeekTransactions = () => {
-    const monday = weekDates[0]
-    const sunday = new Date(weekDates[6])
-    sunday.setHours(23, 59, 59, 999)
+  // Save data to localStorage whenever state changes (client-side only)
+  useEffect(() => {
+    if (!isClient) return
 
-    return transactions.filter((t) => {
-      const tDate = new Date(t.date)
-      return tDate >= monday && tDate <= sunday
-    })
-  }
+    const dataToSave = {
+      dashboardData,
+      budgetCategories,
+      weeklyPayables,
+      transactions,
+      dailyIncome,
+    }
+    safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
+  }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
 
-  const currentWeekTransactions = getCurrentWeekTransactions()
+  // Save expense categories separately
+  useEffect(() => {
+    if (!isClient) return
+    safeLocalStorage.setItem("expenseCategories", JSON.stringify(expenseCategories))
+  }, [expenseCategories, isClient])
 
-  const weeklyEarned = currentWeekTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+  // Real-time calculations with safe defaults
+  const currency = dashboardData?.currency || "₱"
 
-  const todayIncome = currentWeekTransactions
-    .filter((t) => {
-      const tDate = new Date(t.date)
-      tDate.setHours(0, 0, 0, 0)
-      return t.type === "income" && tDate.getTime() === today.getTime()
-    })
-    .reduce((sum, t) => sum + t.amount, 0)
-
-  const currentWeekExpenses = currentWeekTransactions
-    .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0)
-
-  const thisWeekExpenses = currentWeekTransactions.filter((t) => t.type === "expense")
-
-  const todayDayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][today.getDay()]
-  const isTodayWorkDay = workDays.includes(todayDayName)
-  const todayGoal = isTodayWorkDay ? dailyGoal : 0
-
-  // Check if today's earnings are marked as final
-  const todayKey = today.toISOString().split("T")[0]
-  const todayIsFinal = dayEarnings[todayKey]?.isFinal || false
-
-  const remainingWorkDays = weekDates.filter((date, index) => {
-    if (date < today) return false
-    if (date.getTime() === today.getTime()) return false
-    const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][date.getDay()]
-    return workDays.includes(dayName)
-  }).length
-
-  // Calculate potential remaining earnings
-  // If today is final, don't add remaining goal for today
-  const remainingTodayPotential = todayIsFinal ? 0 : Math.max(0, todayGoal - todayIncome)
-  const potentialRemainingEarnings = remainingTodayPotential + remainingWorkDays * dailyGoal
-
-  const weeklyGoal = workDays.length * dailyGoal
+  // Work days calculations with null checks - only count workdays with goal > 0
+  const workDays = Array.isArray(dailyIncome) ? dailyIncome.filter((day) => day?.isWorkDay && (day?.goal || 0) > 0) : []
+  const weeklyEarned = workDays.reduce((sum, day) => sum + (day?.amount || 0), 0)
+  const weeklyGoal = workDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
   const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
 
-  const thisWeekProjectedSavings = weeklyEarned >= weeklyGoal ? cashOnHand + weeklyEarned : 0
+  // Today's data with null checks
+  const todayData = Array.isArray(dailyIncome) ? dailyIncome.find((day) => day?.isToday) : null
+  const todayIncome = todayData?.amount || 0
+  const todayGoal = todayData?.isWorkDay ? todayData?.goal || 1100 : 0
 
-  const getPendingWeeklyPayables = () => {
-    return payables.filter((p) => {
-      if (p.frequency !== "weekly") return false
-      if (p.isPaid) {
-        const paidDate = p.paidDate ? new Date(p.paidDate) : null
-        if (paidDate) {
-          paidDate.setHours(0, 0, 0, 0)
-          const monday = weekDates[0]
-          const sunday = new Date(weekDates[6])
-          sunday.setHours(23, 59, 59, 999)
-          if (paidDate >= monday && paidDate <= sunday) {
-            return false
-          }
+  // Real-time expense calculations from transactions with null checks
+  const currentWeekExpenses = Array.isArray(transactions)
+    ? transactions
+        .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
+        .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+    : 0
+
+  // Get this week's expense transactions for the expenses list
+  const thisWeekExpenseTransactions = Array.isArray(transactions)
+    ? transactions
+        .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : []
+
+  // Update budget categories spent amounts from transactions with null checks
+  const updatedBudgetCategories = Array.isArray(budgetCategories)
+    ? budgetCategories.map((category) => {
+        const categoryExpenses = Array.isArray(transactions)
+          ? transactions
+              .filter((t) => t?.type === "expense" && t?.category === category?.name)
+              .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+          : 0
+        return { ...category, spent: categoryExpenses }
+      })
+    : []
+
+  // Get monthly payables that fall within current week
+  const getMonthlyPayablesForCurrentWeek = () => {
+    const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "{}")
+    const currentDate = new Date()
+    const currentMonthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`
+    const currentMonthPayables = monthlyPayables[currentMonthKey] || []
+
+    return currentMonthPayables
+      .filter((payable: any) => {
+        if (payable.date) {
+          return isDateInCurrentWeek(payable.date)
+        }
+        return false
+      })
+      .map((payable: any) => ({
+        ...payable,
+        week: "This Week", // Mark as current week
+        source: "monthly", // Mark source for identification
+      }))
+  }
+
+  // Combine weekly payables with monthly payables that fall in current week
+  const allCurrentWeekPayables = [...weeklyPayables, ...getMonthlyPayablesForCurrentWeek()]
+
+  // Real-time payables calculations with null checks
+  const totalWeeklyPayables = allCurrentWeekPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
+  const pendingPayables = allCurrentWeekPayables.filter((p) => p?.status === "pending")
+  const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
+
+  // Calculate remaining work days and their potential earnings
+  const remainingWorkDays = workDays.filter((day) => !day?.isPast && !day?.isToday)
+  const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
+
+  // This Week's Projected Savings calculation
+  const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
+
+  // FIXED BALANCE LOGIC:
+  // Starting Balance - fixed, never changes
+  const startingBalance = dashboardData?.startingBalance || 0
+
+  // Calculate Cash on Hand (current cash)
+  // Cash on Hand = Starting Balance + Total Income - Total Expenses
+  // Note: We do NOT subtract paidPayablesAmount because bill payments are already recorded as expense transactions
+  const totalIncome = Array.isArray(transactions)
+    ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
+    : 0
+  const totalExpenses = Array.isArray(transactions)
+    ? transactions.filter((t) => t?.type === "expense").reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
+    : 0
+
+  // FIXED: Removed paidPayablesAmount subtraction to prevent double-counting
+  const cashOnHand = startingBalance + totalIncome - totalExpenses
+
+  // Handle payment - bill payments are recorded as expense transactions only
+  const handlePayment = (payableId: number, amount: number) => {
+    // Update payable status
+    const updatedPayables = weeklyPayables.map((payable) => {
+      if (payable.id === payableId) {
+        const newPaidCount = (payable.paidCount || 0) + 1
+        let newStatus = "paid"
+
+        // Smart completion logic
+        if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
+          newStatus = "completed"
+        } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
+          newStatus = "completed"
+        }
+
+        return {
+          ...payable,
+          status: newStatus,
+          paidCount: newPaidCount,
         }
       }
-      return !p.isPaid || !p.paidDate
+      return payable
     })
-  }
 
-  const getPendingMonthlyPayables = () => {
-    return payables.filter((p) => {
-      if (p.frequency !== "monthly") return false
+    setWeeklyPayables(updatedPayables)
 
-      const dueDay = Number.parseInt(p.dueDay)
-      const currentMonth = today.getMonth()
-      const currentYear = today.getFullYear()
-
-      const dueDate = new Date(currentYear, currentMonth, dueDay)
-      dueDate.setHours(0, 0, 0, 0)
-
-      const monday = weekDates[0]
-      const sunday = new Date(weekDates[6])
-      sunday.setHours(23, 59, 59, 999)
-
-      const isDueThisWeek = dueDate >= monday && dueDate <= sunday
-
-      if (!isDueThisWeek) return false
-
-      if (p.isPaid && p.paidDate) {
-        const paidDate = new Date(p.paidDate)
-        paidDate.setHours(0, 0, 0, 0)
-        if (paidDate.getMonth() === currentMonth && paidDate.getFullYear() === currentYear) {
-          return false
-        }
-      }
-
-      return true
-    })
-  }
-
-  const pendingWeeklyPayables = getPendingWeeklyPayables()
-  const pendingMonthlyPayables = getPendingMonthlyPayables()
-  const allPendingPayables = [...pendingWeeklyPayables, ...pendingMonthlyPayables]
-
-  const totalPendingPayables = allPendingPayables.reduce((sum, p) => sum + p.amount, 0)
-
-  const handleAddTransaction = (transaction: Omit<Transaction, "id">) => {
-    const newTransaction = {
-      ...transaction,
-      id: Date.now().toString(),
+    // Add payment as expense transaction
+    // This will automatically reduce cash on hand through the totalExpenses calculation
+    const paymentTransaction = {
+      id: Date.now(),
+      description: `Payment: ${weeklyPayables.find((p) => p.id === payableId)?.name || "Bill"}`,
+      amount: -amount,
+      type: "expense" as const,
+      category: "Bills",
+      date: new Date().toISOString().split("T")[0],
     }
 
-    setTransactions([...transactions, newTransaction])
+    setTransactions((prev) => [paymentTransaction, ...prev])
+  }
 
-    if (transaction.type === "income") {
-      setCashOnHand(cashOnHand + transaction.amount)
+  // Clear all data function
+  const clearAllData = () => {
+    if (
+      typeof window !== "undefined" &&
+      window.confirm("Are you sure you want to clear all data? This action cannot be undone.")
+    ) {
+      // Clear localStorage
+      safeLocalStorage.removeItem("dailyBudgetAppData")
+      safeLocalStorage.removeItem("monthlyPayables")
+      safeLocalStorage.removeItem("biweeklyPayables")
+      safeLocalStorage.removeItem("weeklyPayablesHistory")
+      safeLocalStorage.removeItem("expenseCategories")
 
-      // Track if earnings are final for the day
-      if (transaction.isFinalEarnings) {
-        const dateKey = new Date(transaction.date).toISOString().split("T")[0]
-        setDayEarnings({
-          ...dayEarnings,
-          [dateKey]: {
-            amount: todayIncome + transaction.amount,
-            isFinal: true,
-          },
-        })
-      }
-
-      toast({
-        title: "Income Added",
-        description: `${currency}${transaction.amount.toLocaleString()} added to your balance${
-          transaction.isFinalEarnings ? " (marked as final for today)" : ""
-        }`,
+      // Reset all state to empty/default values
+      setDashboardData({
+        startingBalance: 0,
+        totalBalance: 0,
+        dailyIncomeGoal: 1100.0,
+        weeklyExpenses: 0,
+        weeklyPayables: 0,
+        currency: "₱",
       })
-    } else {
-      setCashOnHand(cashOnHand - transaction.amount)
-      toast({
-        title: "Expense Recorded",
-        description: `${currency}${transaction.amount.toLocaleString()} ${transaction.category} expense logged`,
-      })
+      setBudgetCategories([])
+      setWeeklyPayables([])
+      setTransactions([])
+      setExpenseCategories(defaultExpenseCategories)
+
+      // Reset daily income to zero amounts but keep structure
+      const resetDailyIncome = initializeDailyIncome().map((day) => ({
+        ...day,
+        amount: 0,
+      }))
+      setDailyIncome(resetDailyIncome)
     }
   }
 
-  const handlePayBill = (payableId: string) => {
-    const payable = payables.find((p) => p.id === payableId)
-    if (!payable) return
-
-    setPayables(
-      payables.map((p) =>
-        p.id === payableId
-          ? {
-              ...p,
-              isPaid: true,
-              paidDate: new Date().toISOString(),
-            }
-          : p,
-      ),
+  // Show loading state until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading Daily Budget...</p>
+        </div>
+      </div>
     )
-
-    setCashOnHand(cashOnHand - payable.amount)
-
-    toast({
-      title: "Bill Paid",
-      description: `${payable.name} (${currency}${payable.amount.toLocaleString()}) marked as paid`,
-    })
-  }
-
-  const handleUpdateSettings = (settings: {
-    startingBalance: number
-    cashOnHand: number
-    workDays: string[]
-    payables: Payable[]
-  }) => {
-    setStartingBalance(settings.startingBalance)
-    setCashOnHand(settings.cashOnHand)
-    setWorkDays(settings.workDays)
-    setPayables(settings.payables)
-  }
-
-  const handleAIAction = (action: any) => {
-    switch (action.type) {
-      case "addIncome":
-        handleAddTransaction({
-          type: "income",
-          amount: action.amount,
-          description: action.description || "work",
-          category: action.description || "work",
-          date: new Date().toISOString(),
-        })
-        break
-      case "addExpense":
-        handleAddTransaction({
-          type: "expense",
-          amount: action.amount,
-          description: action.description || "expense",
-          category: action.category || "Other",
-          date: new Date().toISOString(),
-        })
-        break
-      case "markBillAsPaid":
-        const bill = payables.find((p) => p.name.toLowerCase().includes(action.billName.toLowerCase()) && !p.isPaid)
-        if (bill) {
-          handlePayBill(bill.id)
-        }
-        break
-    }
-  }
-
-  const appData = {
-    currency,
-    cashOnHand,
-    startingBalance,
-    todayIncome,
-    todayGoal,
-    weeklyEarned,
-    weeklyGoal,
-    goalProgress,
-    currentWeekExpenses,
-    totalPendingPayables,
-    remainingWorkDays,
-    potentialRemainingEarnings,
-    thisWeekProjectedSavings,
-    pendingPayables: allPendingPayables,
-    thisWeekExpenses,
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <div className="container mx-auto p-4 pb-24 max-w-7xl">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Daily Budget
-            </h1>
-            <p className="text-sm text-muted-foreground">Track your finances smartly</p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
+      <OfflineIndicator />
+      <div className="max-w-md mx-auto bg-white/10 backdrop-blur-lg min-h-screen relative">
+        {/* App Header */}
+        <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-2xl font-bold">Daily Budget v98</h1>
+              <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowNotifications(true)}
+                className="text-white hover:bg-white/20"
+              >
+                <Bell className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSettings(true)}
+                className="text-white hover:bg-white/20"
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+              <InstallPrompt />
+            </div>
           </div>
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
-            <Settings className="h-5 w-5" />
-          </Button>
-        </div>
 
-        {/* Balance Overview */}
-        <div className="grid gap-4 md:grid-cols-3 mb-6">
-          <Card className="bg-gradient-to-br from-purple-500 to-pink-500 text-white">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Cash on Hand
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
-                {currency}
-                {cashOnHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs mt-1 text-purple-100">Available balance</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <PiggyBank className="h-4 w-4" />
-                Starting Balance
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
-                {currency}
-                {startingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs mt-1 text-muted-foreground">Fixed baseline amount</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Today's Progress
-                {todayIsFinal && (
-                  <span className="ml-auto flex items-center gap-1 text-xs font-normal text-green-600 dark:text-green-400">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Final
+          {/* Today's Summary - Real-time */}
+          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-purple-100">
+                Today's Earnings ({getCurrentDayManila()})
+                {!todayData?.isWorkDay && <span className="text-xs"> - Rest Day</span>}
+              </span>
+              <span className="text-xs text-purple-200">
+                Goal: {currency}
+                {safeToLocaleString(todayGoal)}
+              </span>
+            </div>
+            <div className="text-3xl font-bold mb-2">
+              {currency}
+              {safeToLocaleString(todayIncome)}
+            </div>
+            {todayGoal > 0 ? (
+              <>
+                <Progress value={(todayIncome / todayGoal) * 100} className="h-2 bg-white/20" />
+                <div className="flex justify-between text-xs text-purple-200 mt-1">
+                  <span>
+                    {currency}
+                    {safeToLocaleString(todayIncome)} earned
                   </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
-                {currency}
-                {todayIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-muted-foreground">
-                  Goal: {currency}
-                  {todayGoal.toLocaleString()}
-                </span>
-                <span className="text-xs font-medium">
-                  {todayGoal > 0 ? Math.round((todayIncome / todayGoal) * 100) : 0}%
-                </span>
-              </div>
-              <Progress value={todayGoal > 0 ? (todayIncome / todayGoal) * 100 : 0} className="mt-2" />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Weekly Overview */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Weekly Overview</CardTitle>
-                <CardDescription>Your progress this week</CardDescription>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold">
-                  {currency}
-                  {weeklyEarned.toLocaleString()}
+                  <span>{((todayIncome / todayGoal) * 100).toFixed(0)}%</span>
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  of {currency}
-                  {weeklyGoal.toLocaleString()} goal
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Progress value={goalProgress} className="mb-4" />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Earned</p>
-                <p className="font-semibold">
-                  {currency}
-                  {weeklyEarned.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Spent</p>
-                <p className="font-semibold">
-                  {currency}
-                  {currentWeekExpenses.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Pending Bills</p>
-                <p className="font-semibold">
-                  {currency}
-                  {totalPendingPayables.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Projected Savings</p>
-                <p className="font-semibold">
-                  {currency}
-                  {thisWeekProjectedSavings.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tabs */}
-        <Tabs defaultValue="dashboard" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="income">Income</TabsTrigger>
-            <TabsTrigger value="expenses">Expenses</TabsTrigger>
-            <TabsTrigger value="payables">Bills</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard" className="space-y-4">
-            <DailyIncomeChart
-              weekDates={weekDates}
-              transactions={currentWeekTransactions}
-              workDays={workDays}
-              dailyGoal={dailyGoal}
-              currency={currency}
-              dayEarnings={dayEarnings}
-            />
-            <WeeklyPayablesCard payables={allPendingPayables} onPayBill={handlePayBill} currency={currency} />
-          </TabsContent>
-
-          <TabsContent value="income">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Income History</CardTitle>
-                    <CardDescription>Track your earnings</CardDescription>
-                  </div>
-                  <Button
-                    onClick={() => {
-                      setAddDialogType("income")
-                      setAddDialogOpen(true)
-                    }}
-                    size="sm"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Income
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TransactionList
-                  transactions={currentWeekTransactions.filter((t) => t.type === "income")}
-                  currency={currency}
-                  emptyMessage="No income recorded this week"
-                  showDayStatus={true}
-                  dayEarnings={dayEarnings}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="expenses">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>This Week's Expenses</CardTitle>
-                    <CardDescription>
-                      Total: {currency}
-                      {currentWeekExpenses.toLocaleString()}
-                    </CardDescription>
-                  </div>
-                  <Button
-                    onClick={() => {
-                      setAddDialogType("expense")
-                      setAddDialogOpen(true)
-                    }}
-                    size="sm"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Expense
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TransactionList
-                  transactions={thisWeekExpenses}
-                  currency={currency}
-                  emptyMessage="No expenses this week"
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="payables">
-            <Tabs defaultValue="weekly">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="weekly">Weekly</TabsTrigger>
-                <TabsTrigger value="monthly">Monthly</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="weekly">
-                <WeeklyPayablesCard payables={pendingWeeklyPayables} onPayBill={handlePayBill} currency={currency} />
-              </TabsContent>
-
-              <TabsContent value="monthly">
-                <WeeklyPayablesCard payables={pendingMonthlyPayables} onPayBill={handlePayBill} currency={currency} />
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto max-w-7xl">
-          <div className="flex items-center justify-around h-16 px-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setAddDialogType("income")
-                setAddDialogOpen(true)
-              }}
-              className="flex-col h-auto py-2"
-            >
-              <TrendingUp className="h-5 w-5" />
-              <span className="text-xs mt-1">Income</span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAiAssistantOpen(true)}
-              className="flex-col h-auto py-2 relative -mt-8"
-            >
-              <div className="relative">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                  <Sparkles className="h-6 w-6 text-white" />
-                </div>
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full animate-pulse" />
-              </div>
-              <span className="text-xs mt-2 font-medium">AI Assistant</span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setAddDialogType("expense")
-                setAddDialogOpen(true)
-              }}
-              className="flex-col h-auto py-2"
-            >
-              <TrendingDown className="h-5 w-5" />
-              <span className="text-xs mt-1">Expense</span>
-            </Button>
+              </>
+            ) : (
+              <div className="text-xs text-purple-200 mt-1">Rest Day - No Goal Set</div>
+            )}
           </div>
         </div>
+
+        {/* Main Content with bottom padding for navigation */}
+        <div className="p-4 pb-28">
+          {/* HOME TAB */}
+          {activeTab === "home" && (
+            <div className="space-y-4">
+              {/* Quick Stats - Real-time with new balance logic */}
+              <div className="grid grid-cols-2 gap-3">
+                <OptimizedCard
+                  title="Cash on Hand"
+                  value={`${currency}${safeToLocaleString(cashOnHand)}`}
+                  icon={Wallet}
+                  gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
+                  iconColor="text-emerald-200"
+                />
+                <OptimizedCard
+                  title="Future Balance"
+                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings - totalPendingPayables)}`}
+                  subtitle="(this week)"
+                  icon={TrendingUp}
+                  gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
+                  iconColor="text-blue-200"
+                />
+              </div>
+
+              {/* Weekly Progress - Real-time */}
+              <Card className="bg-white/80 backdrop-blur-sm border-0">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg text-gray-800">Weekly Progress (Work Days Only)</CardTitle>
+                  <CardDescription>Your earnings vs goals this week ({workDays.length} work days)</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress</span>
+                      <span className="font-medium">{goalProgress.toFixed(0)}%</span>
+                    </div>
+                    <Progress value={goalProgress} className="h-3" />
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>
+                        {currency}
+                        {safeToLocaleString(weeklyEarned)} earned
+                      </span>
+                      <span>
+                        {currency}
+                        {safeToLocaleString(weeklyGoal)} goal
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Updated Savings Tracker */}
+              <div className="grid grid-cols-2 gap-3">
+                <OptimizedCard
+                  title="If Goals Met"
+                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings)}`}
+                  subtitle="Projected Balance"
+                  icon={TrendingUp}
+                  gradient="bg-gradient-to-br from-green-500 to-emerald-600"
+                  iconColor="text-green-200"
+                />
+                <OptimizedCard
+                  title="This Week's"
+                  value={`${currency}${safeToLocaleString(thisWeekProjectedSavings)}`}
+                  subtitle="Projected Savings"
+                  icon={TrendingDown}
+                  gradient="bg-gradient-to-br from-orange-500 to-red-600"
+                  iconColor="text-orange-200"
+                />
+              </div>
+
+              {/* Daily Income Chart - Real-time */}
+              <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
+
+              {/* Quick Actions */}
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  onClick={() => setShowAddTransaction(true)}
+                  className="bg-gradient-to-r from-green-500 to-emerald-600 h-12"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Income
+                </Button>
+                <Button onClick={() => setActiveTab("payables")} variant="outline" className="h-12 bg-white/80">
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Pay Bills
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* INCOME TAB */}
+          {activeTab === "income" && (
+            <div className="space-y-4">
+              <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
+
+              <Card className="bg-white/80 backdrop-blur-sm border-0">
+                <CardHeader>
+                  <CardTitle className="text-gray-800">Daily Breakdown - Current Week</CardTitle>
+                  <CardDescription>Week starting {getWeekStartManila()}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {Array.isArray(dailyIncome) &&
+                      dailyIncome.map((day, index) => (
+                        <div
+                          key={index}
+                          className={`flex justify-between items-center p-3 rounded-lg ${
+                            day?.isToday
+                              ? "bg-gradient-to-r from-purple-100 to-pink-100 border-2 border-purple-300"
+                              : day?.isPast
+                                ? "bg-gradient-to-r from-gray-50 to-blue-50"
+                                : "bg-gradient-to-r from-yellow-50 to-orange-50"
+                          } ${!day?.isWorkDay ? "opacity-60" : ""}`}
+                        >
+                          <div>
+                            <p className="font-medium text-gray-800 flex items-center gap-2">
+                              {day?.day} {day?.isToday && "(Today)"}
+                              {!day?.isWorkDay && (
+                                <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Rest Day</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              Goal: {currency}
+                              {safeToLocaleString(day?.goal)}
+                            </p>
+                            <p className="text-xs text-gray-500">{day?.date}</p>
+                          </div>
+                          <div className="text-right">
+                            <p
+                              className={`font-bold text-lg ${
+                                !day?.isWorkDay
+                                  ? "text-gray-400"
+                                  : (day?.amount || 0) >= (day?.goal || 0)
+                                    ? "text-green-600"
+                                    : day?.isPast
+                                      ? "text-red-600"
+                                      : "text-orange-600"
+                              }`}
+                            >
+                              {currency}
+                              {safeToLocaleString(day?.amount)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {day?.isWorkDay && (day?.goal || 0) > 0
+                                ? `${(((day?.amount || 0) / (day?.goal || 1)) * 100).toFixed(0)}%`
+                                : "N/A"}
+                            </p>
+                            {day?.isPast && (day?.amount || 0) === 0 && day?.isWorkDay && (
+                              <p className="text-xs text-red-500">No earnings</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* EXPENSES TAB - Simplified to only show expenses list */}
+          {activeTab === "expenses" && (
+            <div className="space-y-4">
+              <Card className="bg-white/80 backdrop-blur-sm border-0">
+                <CardHeader>
+                  <CardTitle className="text-gray-800 flex items-center gap-2">
+                    <Receipt className="w-5 h-5" />
+                    This Week's Expenses
+                  </CardTitle>
+                  <CardDescription>All expenses logged from {getWeekStartManila()}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {thisWeekExpenseTransactions.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Receipt className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p>No expenses logged this week.</p>
+                      <p className="text-sm">Add expenses to track your spending.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2 mb-4">
+                        {thisWeekExpenseTransactions.map((expense) => (
+                          <div
+                            key={expense.id}
+                            className="flex justify-between items-center p-3 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{expense.description}</p>
+                              <p className="text-xs text-gray-500">
+                                {expense.date} • {expense.category}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-red-600">
+                                {currency}
+                                {safeToLocaleString(Math.abs(expense.amount))}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t-2 border-gray-200 pt-3 mt-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-lg font-bold text-gray-800">Weekly Total:</span>
+                          <span className="text-2xl font-bold text-red-600">
+                            {currency}
+                            {safeToLocaleString(currentWeekExpenses)}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* PAYABLES TAB */}
+          {activeTab === "payables" && (
+            <div className="space-y-4">
+              <WeeklyPayablesCard
+                weeklyPayables={allCurrentWeekPayables}
+                setWeeklyPayables={setWeeklyPayables}
+                currency={currency}
+                onPayment={handlePayment}
+              />
+            </div>
+          )}
+
+          {/* TRANSACTIONS TAB */}
+          {activeTab === "transactions" && (
+            <div className="space-y-4">
+              <TransactionList transactions={transactions} currency={currency} />
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Navigation - Fixed with higher z-index */}
+        <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur-lg border-t border-white/20 shadow-lg">
+          <div className="max-w-md mx-auto flex items-center justify-center py-2 px-4">
+            {/* Left side buttons */}
+            <div className="flex flex-1 justify-around">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("home")}
+                className={`flex flex-col items-center py-3 ${activeTab === "home" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <Home className="w-4 h-4 mb-1" />
+                <span className="text-xs">Home</span>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("income")}
+                className={`flex flex-col items-center py-3 ${activeTab === "income" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <DollarSign className="w-4 h-4 mb-1" />
+                <span className="text-xs">Income</span>
+              </Button>
+            </div>
+
+            {/* Center Plus Button */}
+            <div className="mx-4">
+              <Button
+                onClick={() => {
+                  setQuickActionType(null)
+                  setShowAddTransaction(true)
+                }}
+                className="w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+              >
+                <Plus className="w-6 h-6" />
+              </Button>
+            </div>
+
+            {/* Right side buttons */}
+            <div className="flex flex-1 justify-around">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("expenses")}
+                className={`flex flex-col items-center py-3 ${activeTab === "expenses" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <TrendingDown className="w-4 h-4 mb-1" />
+                <span className="text-xs">Expenses</span>
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab("payables")}
+                className={`flex flex-col items-center py-3 ${activeTab === "payables" ? "text-purple-600" : "text-gray-600"}`}
+              >
+                <CreditCard className="w-4 h-4 mb-1" />
+                <span className="text-xs">Bills</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Dialogs */}
+        <AddTransactionDialog
+          open={showAddTransaction}
+          onOpenChange={setShowAddTransaction}
+          onAddTransaction={(transaction) => {
+            setTransactions([{ ...transaction, id: Date.now() }, ...transactions])
+            // Update daily income if it's an income transaction for today
+            if (transaction.type === "income") {
+              const today = getCurrentDayManila()
+              const todayIndex = dailyIncome.findIndex((d) => d.day === today)
+              if (todayIndex !== -1) {
+                const updated = [...dailyIncome]
+                updated[todayIndex] = {
+                  ...updated[todayIndex],
+                  amount: updated[todayIndex].amount + transaction.amount,
+                }
+                setDailyIncome(updated)
+              }
+            }
+          }}
+          budgetCategories={budgetCategories}
+          expenseCategories={expenseCategories}
+          currency={currency}
+          defaultDescription="work"
+        />
+
+        <SettingsDialog
+          open={showSettings}
+          onOpenChange={setShowSettings}
+          dashboardData={dashboardData}
+          setDashboardData={setDashboardData}
+          budgetCategories={budgetCategories}
+          setBudgetCategories={setBudgetCategories}
+          weeklyPayables={weeklyPayables}
+          setWeeklyPayables={setWeeklyPayables}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          dailyIncome={dailyIncome}
+          setDailyIncome={setDailyIncome}
+          expenseCategories={expenseCategories}
+          setExpenseCategories={setExpenseCategories}
+          currency={currency}
+          clearAllData={clearAllData}
+        />
+
+        {/* Notifications Dialog */}
+        {showNotifications && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 text-white">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold">Enhanced Notifications</h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowNotifications(false)}
+                    className="text-white hover:bg-white/20"
+                  >
+                    ✕
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[60vh]">
+                <NotificationManager
+                  weeklyPayables={allCurrentWeekPayables}
+                  dailyIncome={dailyIncome}
+                  currency={currency}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-
-      <AddTransactionDialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-        type={addDialogType}
-        onAdd={handleAddTransaction}
-      />
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        startingBalance={startingBalance}
-        cashOnHand={cashOnHand}
-        workDays={workDays}
-        payables={payables}
-        onUpdate={handleUpdateSettings}
-        currency={currency}
-      />
-
-      <AIAssistant
-        isOpen={aiAssistantOpen}
-        onClose={() => setAiAssistantOpen(false)}
-        appData={appData}
-        onExecuteAction={handleAIAction}
-      />
     </div>
   )
 }

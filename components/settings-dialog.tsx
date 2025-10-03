@@ -1,17 +1,16 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,8 +24,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Settings,
-  Trash2Icon,
-  PlusIcon,
+  Trash2,
+  Plus,
   Edit,
   Save,
   X,
@@ -177,34 +176,7 @@ interface SettingsDialogProps {
   setExpenseCategories: (categories: string[]) => void
   currency: string
   clearAllData: () => void
-  // Props from the updates
-  startingBalance: number
-  cashOnHand: number
-  workDays: string[]
-  payables: {
-    id: string
-    name: string
-    amount: number
-    frequency: "weekly" | "monthly"
-    dueDay: string
-    isPaid: boolean
-  }[]
-  onUpdate: (settings: {
-    startingBalance: number
-    cashOnHand: number
-    workDays: string[]
-    payables: {
-      id: string
-      name: string
-      amount: number
-      frequency: "weekly" | "monthly"
-      dueDay: string
-      isPaid: boolean
-    }[]
-  }) => void
 }
-
-const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 export function SettingsDialog({
   open,
@@ -223,12 +195,6 @@ export function SettingsDialog({
   setExpenseCategories,
   currency,
   clearAllData,
-  // Props from the updates
-  startingBalance,
-  cashOnHand,
-  workDays,
-  payables,
-  onUpdate,
 }: SettingsDialogProps) {
   const [editingCategory, setEditingCategory] = useState<number | null>(null)
   const [editingPayable, setEditingPayable] = useState<number | null>(null)
@@ -254,16 +220,6 @@ export function SettingsDialog({
     status: "pending",
   })
   const [editingMonthlyPayable, setEditingMonthlyPayable] = useState<number | null>(null)
-
-  // State for updated props
-  const [localStartingBalance, setLocalStartingBalance] = useState(startingBalance.toString())
-  const [localCashOnHand, setLocalCashOnHand] = useState(cashOnHand.toString())
-  const [localWorkDays, setLocalWorkDays] = useState(workDays)
-  const [localPayables, setLocalPayables] = useState(payables) // Use 'payables' prop here
-  const [newPayableName, setNewPayableName] = useState("")
-  const [newPayableAmount, setNewPayableAmount] = useState("")
-  const [newPayableFrequency, setNewPayableFrequency] = useState<"weekly" | "monthly">("weekly")
-  const [newPayableDueDay, setNewPayableDueDay] = useState("Monday")
 
   // Safe dashboard data with defaults
   const safeDashboardData = dashboardData || {
@@ -308,14 +264,6 @@ export function SettingsDialog({
       setLastBackup(saved)
     }
   }, [])
-
-  // Update state when props change
-  useEffect(() => {
-    setLocalStartingBalance(startingBalance.toString())
-    setLocalCashOnHand(cashOnHand.toString())
-    setLocalWorkDays(workDays)
-    setLocalPayables(payables)
-  }, [startingBalance, cashOnHand, workDays, payables])
 
   // Update budget categories with real-time expense data
   const updatedBudgetCategories = safeBudgetCategories.map((category) => {
@@ -512,51 +460,6 @@ export function SettingsDialog({
     }
   }
 
-  // Handler for the save button from the updated props
-  const handleSave = () => {
-    onUpdate({
-      startingBalance: Number.parseFloat(localStartingBalance) || 0,
-      cashOnHand: Number.parseFloat(localCashOnHand) || 0,
-      workDays: localWorkDays,
-      payables: localPayables,
-    })
-    onOpenChange(false)
-  }
-
-  const toggleWorkDay = (day: string) => {
-    setLocalWorkDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
-  }
-
-  const addPayable = () => {
-    if (!newPayableName || !newPayableAmount) return
-
-    const newPayableItem: {
-      id: string
-      name: string
-      amount: number
-      frequency: "weekly" | "monthly"
-      dueDay: string
-      isPaid: boolean
-    } = {
-      id: Date.now().toString(),
-      name: newPayableName,
-      amount: Number.parseFloat(newPayableAmount),
-      frequency: newPayableFrequency,
-      dueDay: newPayableFrequency === "weekly" ? newPayableDueDay : newPayableDueDay, // Ensure dueDay is handled correctly for both
-      isPaid: false,
-    }
-
-    setLocalPayables([...localPayables, newPayableItem])
-    setNewPayableName("")
-    setNewPayableAmount("")
-    setNewPayableFrequency("weekly")
-    setNewPayableDueDay("Monday")
-  }
-
-  const removePayable = (id: string) => {
-    setLocalPayables(localPayables.filter((p) => p.id !== id))
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
@@ -576,10 +479,6 @@ export function SettingsDialog({
             <TabsTrigger value="goals">Goals</TabsTrigger>
             <TabsTrigger value="data">Data</TabsTrigger>
             <TabsTrigger value="app">App</TabsTrigger>
-            {/* Tabs for updated props */}
-            <TabsTrigger value="balance">Balance</TabsTrigger>
-            <TabsTrigger value="workdays">Work Days</TabsTrigger>
-            <TabsTrigger value="settings-payables">Payables</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 overflow-y-auto max-h-[60vh]">
@@ -734,7 +633,7 @@ export function SettingsDialog({
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <PlusIcon className="w-5 h-5 text-green-600" />
+                    <Plus className="w-5 h-5 text-green-600" />
                     Add Budget Category
                   </CardTitle>
                 </CardHeader>
@@ -761,7 +660,7 @@ export function SettingsDialog({
                     </div>
                   </div>
                   <Button onClick={addBudgetCategory} className="w-full">
-                    <PlusIcon className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4 mr-2" />
                     Add Category
                   </Button>
                 </CardContent>
@@ -836,7 +735,7 @@ export function SettingsDialog({
                                     onClick={() => deleteBudgetCategory(category?.id)}
                                     className="text-red-600 hover:text-red-700"
                                   >
-                                    <Trash2Icon className="w-3 h-3" />
+                                    <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
                               </div>
@@ -925,7 +824,7 @@ export function SettingsDialog({
                       </Select>
                     </div>
                     <Button onClick={addMonthlyPayable} className="w-full bg-purple-600">
-                      <PlusIcon className="w-4 h-4 mr-2" />
+                      <Plus className="w-4 h-4 mr-2" />
                       Add Monthly Bill
                     </Button>
                   </div>
@@ -1036,7 +935,7 @@ export function SettingsDialog({
                                     onClick={() => deleteMonthlyPayable(payable.id)}
                                     className="text-red-600 hover:text-red-700"
                                   >
-                                    <Trash2Icon className="w-3 h-3" />
+                                    <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
                               </div>
@@ -1053,7 +952,7 @@ export function SettingsDialog({
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <PlusIcon className="w-5 h-5 text-blue-600" />
+                    <Plus className="w-5 h-5 text-blue-600" />
                     Add Weekly Bill
                   </CardTitle>
                 </CardHeader>
@@ -1117,7 +1016,7 @@ export function SettingsDialog({
                     </div>
                   </div>
                   <Button onClick={addWeeklyPayable} className="w-full">
-                    <PlusIcon className="w-4 h-4 mr-2" />
+                    <Plus className="w-4 h-4 mr-2" />
                     Add Bill
                   </Button>
                 </CardContent>
@@ -1250,7 +1149,7 @@ export function SettingsDialog({
                                     onClick={() => deleteWeeklyPayable(payable?.id)}
                                     className="text-red-600 hover:text-red-700"
                                   >
-                                    <Trash2Icon className="w-3 h-3" />
+                                    <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
                               </div>
@@ -1418,7 +1317,7 @@ export function SettingsDialog({
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <PlusIcon className="w-5 h-5 text-purple-600" />
+                    <Plus className="w-5 h-5 text-purple-600" />
                     Expense Categories
                   </CardTitle>
                   <CardDescription>Manage categories for expense tracking</CardDescription>
@@ -1432,7 +1331,7 @@ export function SettingsDialog({
                       className="flex-1"
                     />
                     <Button onClick={addExpenseCategory}>
-                      <PlusIcon className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
                     </Button>
                   </div>
 
@@ -1446,7 +1345,7 @@ export function SettingsDialog({
                           onClick={() => deleteExpenseCategory(category)}
                           className="text-red-600 hover:text-red-700"
                         >
-                          <Trash2Icon className="w-3 h-3" />
+                          <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
                     ))}
@@ -1520,7 +1419,7 @@ export function SettingsDialog({
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" className="w-full">
-                        <Trash2Icon className="w-4 h-4 mr-2" />
+                        <Trash2 className="w-4 h-4 mr-2" />
                         Clear All Data
                       </Button>
                     </AlertDialogTrigger>
@@ -1631,176 +1530,8 @@ export function SettingsDialog({
                 </CardContent>
               </Card>
             </TabsContent>
-
-            {/* TabsContent for updated props */}
-            <TabsContent value="balance" className="space-y-4 mt-0">
-              <div>
-                <Label htmlFor="startingBalance">Starting Balance ({currency})</Label>
-                <Input
-                  id="startingBalance"
-                  type="number"
-                  step="0.01"
-                  value={localStartingBalance}
-                  onChange={(e) => setLocalStartingBalance(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Your fixed baseline amount</p>
-              </div>
-
-              <div>
-                <Label htmlFor="cashOnHand">Cash on Hand ({currency})</Label>
-                <Input
-                  id="cashOnHand"
-                  type="number"
-                  step="0.01"
-                  value={localCashOnHand}
-                  onChange={(e) => setLocalCashOnHand(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Your current available balance</p>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="workdays" className="space-y-4 mt-0">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Work Days</CardTitle>
-                  <CardDescription>Select the days you expect to earn income</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {allDays.map((day) => (
-                    <div key={day} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={day}
-                        checked={localWorkDays.includes(day)}
-                        onCheckedChange={() => toggleWorkDay(day)}
-                      />
-                      <label htmlFor={day} className="text-sm font-medium cursor-pointer">
-                        {day}
-                      </label>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="settings-payables" className="space-y-4 mt-0">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Add New Payable</CardTitle>
-                  <CardDescription>Add recurring bills and expenses</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="payableName">Name</Label>
-                    <Input
-                      id="payableName"
-                      value={newPayableName}
-                      onChange={(e) => setNewPayableName(e.target.value)}
-                      placeholder="e.g., Rent, Internet, Groceries"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="payableAmount">Amount ({currency})</Label>
-                    <Input
-                      id="payableAmount"
-                      type="number"
-                      step="0.01"
-                      value={newPayableAmount}
-                      onChange={(e) => setNewPayableAmount(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="payableFrequency">Frequency</Label>
-                    <Select
-                      value={newPayableFrequency}
-                      onValueChange={(value: "weekly" | "monthly") => setNewPayableFrequency(value)}
-                    >
-                      <SelectTrigger id="payableFrequency">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="payableDueDay">Due Day</Label>
-                    {newPayableFrequency === "weekly" ? (
-                      <Select value={newPayableDueDay} onValueChange={setNewPayableDueDay}>
-                        <SelectTrigger id="payableDueDay">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {allDays.map((day) => (
-                            <SelectItem key={day} value={day}>
-                              {day}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        id="payableDueDay"
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={newPayableDueDay}
-                        onChange={(e) => setNewPayableDueDay(e.target.value)}
-                        placeholder="Day of month (1-31)"
-                      />
-                    )}
-                  </div>
-
-                  <Button onClick={addPayable} className="w-full">
-                    <PlusIcon className="h-4 w-4 mr-2" />
-                    Add Payable
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Existing Payables</CardTitle>
-                  <CardDescription>Manage your recurring bills</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {localPayables.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">No payables added yet</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {localPayables.map((payable) => (
-                        <div key={payable.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                          <div>
-                            <p className="font-medium">{payable.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {currency}
-                              {payable.amount.toLocaleString()} • {payable.frequency} • Due: {payable.dueDay}
-                            </p>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => removePayable(payable.id)}>
-                            <Trash2Icon className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
           </div>
         </Tabs>
-
-        {/* Save Changes Button for updated props */}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>Save Changes</Button>
-        </div>
       </DialogContent>
     </Dialog>
   )
