@@ -5,7 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { TrendingDown, Plus, Settings, Wallet, Home, DollarSign, CreditCard, TrendingUp, Bell } from "lucide-react"
+import {
+  TrendingDown,
+  Plus,
+  Settings,
+  Wallet,
+  Home,
+  DollarSign,
+  CreditCard,
+  TrendingUp,
+  Bell,
+  Receipt,
+} from "lucide-react"
 import { SpendingChart } from "../components/spending-chart"
 import { TransactionList } from "../components/transaction-list"
 import { SettingsDialog } from "../components/settings-dialog"
@@ -87,6 +98,7 @@ const getCurrentWeekDays = () => {
 
 // Default data - focused on daily earnings in PHP with updated daily goal
 const defaultDashboardData = {
+  startingBalance: 12450.75, // This is the fixed starting balance
   totalBalance: 12450.75,
   dailyIncomeGoal: 1100.0,
   weeklyExpenses: 3850.25,
@@ -214,7 +226,12 @@ export default function BudgetingApp() {
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData)
-        setDashboardData(parsed.dashboardData || defaultDashboardData)
+        // Ensure startingBalance is preserved
+        const loadedData = parsed.dashboardData || defaultDashboardData
+        if (!loadedData.startingBalance) {
+          loadedData.startingBalance = loadedData.totalBalance || defaultDashboardData.startingBalance
+        }
+        setDashboardData(loadedData)
         setBudgetCategories(parsed.budgetCategories || defaultBudgetCategories)
         setWeeklyPayables(parsed.weeklyPayables || defaultWeeklyPayables)
         setTransactions(parsed.transactions || defaultTransactions)
@@ -292,6 +309,13 @@ export default function BudgetingApp() {
         .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
 
+  // Get this week's expense transactions for the new expenses list
+  const thisWeekExpenseTransactions = Array.isArray(transactions)
+    ? transactions
+        .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : []
+
   // Update budget categories spent amounts from transactions with null checks
   const updatedBudgetCategories = Array.isArray(budgetCategories)
     ? budgetCategories.map((category) => {
@@ -340,7 +364,12 @@ export default function BudgetingApp() {
   // This Week's Projected Savings calculation
   const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
 
-  // Current actual balance calculation
+  // NEW BALANCE LOGIC:
+  // Starting Balance - fixed, never changes
+  const startingBalance = dashboardData?.startingBalance || 0
+
+  // Calculate Cash on Hand (current cash)
+  // Cash on Hand = Starting Balance + Total Income - Total Expenses - Paid Bills
   const totalIncome = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
     : 0
@@ -351,9 +380,9 @@ export default function BudgetingApp() {
     ? weeklyPayables.filter((p) => p?.status === "paid").reduce((sum, p) => sum + (p?.amount || 0), 0)
     : 0
 
-  const calculatedBalance = (dashboardData?.totalBalance || 0) + totalIncome - totalExpenses - paidPayablesAmount
+  const cashOnHand = startingBalance + totalIncome - totalExpenses - paidPayablesAmount
 
-  // Handle payment - deduct from balance
+  // Handle payment - ONLY deduct from cash on hand, NOT starting balance
   const handlePayment = (payableId: number, amount: number) => {
     // Update payable status
     const updatedPayables = weeklyPayables.map((payable) => {
@@ -379,13 +408,8 @@ export default function BudgetingApp() {
 
     setWeeklyPayables(updatedPayables)
 
-    // Deduct payment from balance
-    setDashboardData((prev) => ({
-      ...prev,
-      totalBalance: prev.totalBalance - amount,
-    }))
-
     // Add payment as expense transaction
+    // This will automatically reduce cash on hand through the calculation
     const paymentTransaction = {
       id: Date.now(),
       description: `Payment: ${weeklyPayables.find((p) => p.id === payableId)?.name || "Bill"}`,
@@ -413,6 +437,7 @@ export default function BudgetingApp() {
 
       // Reset all state to empty/default values
       setDashboardData({
+        startingBalance: 0,
         totalBalance: 0,
         dailyIncomeGoal: 1100.0,
         weeklyExpenses: 0,
@@ -482,7 +507,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v81</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v97</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -560,18 +585,18 @@ export default function BudgetingApp() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="home" className="space-y-4 mt-0">
-              {/* Quick Stats - Real-time */}
+              {/* Quick Stats - Real-time with new balance logic */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
-                  title="Balance"
-                  value={`${currency}${safeToLocaleString(calculatedBalance)}`}
+                  title="Cash on Hand"
+                  value={`${currency}${safeToLocaleString(cashOnHand)}`}
                   icon={Wallet}
                   gradient="bg-gradient-to-br from-emerald-500 to-teal-600"
                   iconColor="text-emerald-200"
                 />
                 <OptimizedCard
                   title="Future Balance"
-                  value={`${currency}${safeToLocaleString(calculatedBalance + potentialRemainingEarnings - totalPendingPayables)}`}
+                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings - totalPendingPayables)}`}
                   subtitle="(this week)"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
@@ -610,7 +635,7 @@ export default function BudgetingApp() {
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="If Goals Met"
-                  value={`${currency}${safeToLocaleString(calculatedBalance + potentialRemainingEarnings)}`}
+                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings)}`}
                   subtitle="Projected Balance"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-green-500 to-emerald-600"
@@ -712,6 +737,59 @@ export default function BudgetingApp() {
             </TabsContent>
 
             <TabsContent value="expenses" className="space-y-4 mt-0">
+              {/* NEW: This Week's Expenses List */}
+              <Card className="bg-white/80 backdrop-blur-sm border-0">
+                <CardHeader>
+                  <CardTitle className="text-gray-800 flex items-center gap-2">
+                    <Receipt className="w-5 h-5" />
+                    This Week's Expenses
+                  </CardTitle>
+                  <CardDescription>All expenses logged from {getWeekStartManila()}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {thisWeekExpenseTransactions.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Receipt className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p>No expenses logged this week.</p>
+                      <p className="text-sm">Add expenses to track your spending.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2 mb-4">
+                        {thisWeekExpenseTransactions.map((expense) => (
+                          <div
+                            key={expense.id}
+                            className="flex justify-between items-center p-3 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{expense.description}</p>
+                              <p className="text-xs text-gray-500">
+                                {expense.date} • {expense.category}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-red-600">
+                                {currency}
+                                {safeToLocaleString(Math.abs(expense.amount))}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t-2 border-gray-200 pt-3 mt-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-lg font-bold text-gray-800">Weekly Total:</span>
+                          <span className="text-2xl font-bold text-red-600">
+                            {currency}
+                            {safeToLocaleString(currentWeekExpenses)}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
               <SpendingChart budgetCategories={updatedBudgetCategories} currency={currency} />
 
               <Card className="bg-white/80 backdrop-blur-sm border-0">
