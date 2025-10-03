@@ -15,6 +15,8 @@ import {
   TrendingUp,
   Bell,
   Receipt,
+  Bot,
+  Sparkles,
 } from "lucide-react"
 import { TransactionList } from "../components/transaction-list"
 import { SettingsDialog } from "../components/settings-dialog"
@@ -25,6 +27,8 @@ import { AddTransactionDialog } from "@/components/add-transaction-dialog"
 import OfflineIndicator from "@/components/offline-indicator"
 import OptimizedCard from "@/components/optimized-card"
 import NotificationManager from "@/components/notification-manager"
+import { AIAssistant } from "@/components/ai-assistant"
+import { Badge } from "@/components/ui/badge"
 
 // Helper function to get current Manila time
 const getManilaTime = () => {
@@ -96,7 +100,7 @@ const getCurrentWeekDays = () => {
 
 // Default data - focused on daily earnings in PHP with updated daily goal
 const defaultDashboardData = {
-  startingBalance: 12450.75, // This is the fixed starting balance
+  startingBalance: 12450.75,
   totalBalance: 12450.75,
   dailyIncomeGoal: 1100.0,
   weeklyExpenses: 3850.25,
@@ -139,24 +143,22 @@ const defaultTransactions = [
   },
 ]
 
-// Default expense categories
 const defaultExpenseCategories = ["Food", "Transport", "Bills", "Entertainment", "Shopping", "Other"]
 
-// Initialize daily income with current week dates and updated goals
 const initializeDailyIncome = () => {
   const weekDays = getCurrentWeekDays()
   return weekDays.map((dayInfo) => ({
     day: dayInfo.day,
     amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0,
-    goal: dayInfo.day === "Sun" ? 0 : 1100, // Sunday = 0 (non-workday), others = 1100
+    goal: dayInfo.day === "Sun" ? 0 : 1100,
     date: dayInfo.date,
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
-    isWorkDay: dayInfo.day !== "Sun", // Sunday is non-workday by default
+    isWorkDay: dayInfo.day !== "Sun",
+    isFinalForDay: false, // Track if earnings are final for the day
   }))
 }
 
-// Safe localStorage access
 const safeLocalStorage = {
   getItem: (key: string) => {
     if (typeof window !== "undefined") {
@@ -176,7 +178,6 @@ const safeLocalStorage = {
   },
 }
 
-// Safe number formatting function
 const safeToLocaleString = (value: any): string => {
   const num = Number(value)
   return isNaN(num) ? "0" : num.toLocaleString()
@@ -186,12 +187,12 @@ export default function BudgetingApp() {
   const [showAddTransaction, setShowAddTransaction] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showAI, setShowAI] = useState(false)
   const [activeTab, setActiveTab] = useState("home")
   const [currentTime, setCurrentTime] = useState("")
   const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
   const [isClient, setIsClient] = useState(false)
 
-  // State with localStorage persistence
   const [dashboardData, setDashboardData] = useState(defaultDashboardData)
   const [budgetCategories, setBudgetCategories] = useState(defaultBudgetCategories)
   const [weeklyPayables, setWeeklyPayables] = useState(defaultWeeklyPayables)
@@ -199,13 +200,11 @@ export default function BudgetingApp() {
   const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
   const [expenseCategories, setExpenseCategories] = useState(defaultExpenseCategories)
 
-  // Set client-side flag and initialize time
   useEffect(() => {
     setIsClient(true)
     setCurrentTime(getManilaTime())
   }, [])
 
-  // Update time every minute
   useEffect(() => {
     if (!isClient) return
 
@@ -216,7 +215,6 @@ export default function BudgetingApp() {
     return () => clearInterval(timer)
   }, [isClient])
 
-  // Load data from localStorage on component mount (client-side only)
   useEffect(() => {
     if (!isClient) return
 
@@ -224,7 +222,6 @@ export default function BudgetingApp() {
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData)
-        // Ensure startingBalance is preserved
         const loadedData = parsed.dashboardData || defaultDashboardData
         if (!loadedData.startingBalance) {
           loadedData.startingBalance = loadedData.totalBalance || defaultDashboardData.startingBalance
@@ -234,7 +231,6 @@ export default function BudgetingApp() {
         setWeeklyPayables(parsed.weeklyPayables || defaultWeeklyPayables)
         setTransactions(parsed.transactions || defaultTransactions)
 
-        // Update daily income with current week structure
         const savedDailyIncome = parsed.dailyIncome || []
         const currentWeekDays = getCurrentWeekDays()
         const updatedDailyIncome = currentWeekDays.map((dayInfo) => {
@@ -242,11 +238,12 @@ export default function BudgetingApp() {
           return {
             day: dayInfo.day,
             amount: savedDay?.amount || 0,
-            goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100, // Use workday status to set goal
+            goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100,
             date: dayInfo.date,
             isToday: dayInfo.isToday,
             isPast: dayInfo.isPast,
             isWorkDay: savedDay?.isWorkDay !== undefined ? savedDay.isWorkDay : dayInfo.day !== "Sun",
+            isFinalForDay: savedDay?.isFinalForDay || false,
           }
         })
         setDailyIncome(updatedDailyIncome)
@@ -255,7 +252,6 @@ export default function BudgetingApp() {
       }
     }
 
-    // Load expense categories
     const savedExpenseCategories = safeLocalStorage.getItem("expenseCategories")
     if (savedExpenseCategories) {
       try {
@@ -266,7 +262,6 @@ export default function BudgetingApp() {
     }
   }, [isClient])
 
-  // Save data to localStorage whenever state changes (client-side only)
   useEffect(() => {
     if (!isClient) return
 
@@ -280,41 +275,35 @@ export default function BudgetingApp() {
     safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
   }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
 
-  // Save expense categories separately
   useEffect(() => {
     if (!isClient) return
     safeLocalStorage.setItem("expenseCategories", JSON.stringify(expenseCategories))
   }, [expenseCategories, isClient])
 
-  // Real-time calculations with safe defaults
   const currency = dashboardData?.currency || "₱"
 
-  // Work days calculations with null checks - only count workdays with goal > 0
   const workDays = Array.isArray(dailyIncome) ? dailyIncome.filter((day) => day?.isWorkDay && (day?.goal || 0) > 0) : []
   const weeklyEarned = workDays.reduce((sum, day) => sum + (day?.amount || 0), 0)
   const weeklyGoal = workDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
   const goalProgress = weeklyGoal > 0 ? (weeklyEarned / weeklyGoal) * 100 : 0
 
-  // Today's data with null checks
   const todayData = Array.isArray(dailyIncome) ? dailyIncome.find((day) => day?.isToday) : null
   const todayIncome = todayData?.amount || 0
   const todayGoal = todayData?.isWorkDay ? todayData?.goal || 1100 : 0
+  const todayIsFinal = todayData?.isFinalForDay || false
 
-  // Real-time expense calculations from transactions with null checks
   const currentWeekExpenses = Array.isArray(transactions)
     ? transactions
         .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
         .reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
 
-  // Get this week's expense transactions for the expenses list
   const thisWeekExpenseTransactions = Array.isArray(transactions)
     ? transactions
         .filter((t) => t?.type === "expense" && new Date(t?.date || "") >= new Date(getWeekStartManila()))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : []
 
-  // Update budget categories spent amounts from transactions with null checks
   const updatedBudgetCategories = Array.isArray(budgetCategories)
     ? budgetCategories.map((category) => {
         const categoryExpenses = Array.isArray(transactions)
@@ -326,49 +315,59 @@ export default function BudgetingApp() {
       })
     : []
 
-  // Get monthly payables that fall within current week
   const getMonthlyPayablesForCurrentWeek = () => {
-    const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "{}")
+    const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "[]")
     const currentDate = new Date()
-    const currentMonthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`
-    const currentMonthPayables = monthlyPayables[currentMonthKey] || []
+    const currentYear = currentDate.getFullYear()
+    const currentMonth = currentDate.getMonth()
 
-    return currentMonthPayables
+    return monthlyPayables
       .filter((payable: any) => {
-        if (payable.date) {
-          return isDateInCurrentWeek(payable.date)
-        }
-        return false
+        const dueDate = new Date(currentYear, currentMonth, payable.dayOfMonth)
+        const dueDateString = dueDate.toISOString().split("T")[0]
+        return isDateInCurrentWeek(dueDateString)
       })
       .map((payable: any) => ({
         ...payable,
-        week: "This Week", // Mark as current week
-        source: "monthly", // Mark source for identification
+        week: "This Week",
+        source: "monthly",
+        dueDay: new Date(currentYear, currentMonth, payable.dayOfMonth).toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+        date: new Date(currentYear, currentMonth, payable.dayOfMonth).toISOString().split("T")[0],
       }))
   }
 
-  // Combine weekly payables with monthly payables that fall in current week
   const allCurrentWeekPayables = [...weeklyPayables, ...getMonthlyPayablesForCurrentWeek()]
 
-  // Real-time payables calculations with null checks
   const totalWeeklyPayables = allCurrentWeekPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
   const pendingPayables = allCurrentWeekPayables.filter((p) => p?.status === "pending")
   const totalPendingPayables = pendingPayables.reduce((sum, payable) => sum + (payable?.amount || 0), 0)
 
-  // Calculate remaining work days and their potential earnings
-  const remainingWorkDays = workDays.filter((day) => !day?.isPast && !day?.isToday)
+  // IMPROVED: Calculate remaining earnings with "final" day logic
+  const remainingWorkDays = workDays.filter((day) => {
+    // Don't count past days
+    if (day?.isPast) return false
+    // Don't count today if it's marked as final
+    if (day?.isToday && day?.isFinalForDay) return false
+    // Don't count today in remaining (it's current)
+    if (day?.isToday) return false
+    return true
+  })
+
   const potentialRemainingEarnings = remainingWorkDays.reduce((sum, day) => sum + (day?.goal || 0), 0)
 
-  // This Week's Projected Savings calculation
-  const thisWeekProjectedSavings = weeklyEarned + potentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
+  // Add today's remaining potential if not final
+  const todayRemainingPotential =
+    todayData && !todayIsFinal && todayData.isWorkDay ? Math.max(0, todayGoal - todayIncome) : 0
 
-  // FIXED BALANCE LOGIC:
-  // Starting Balance - fixed, never changes
+  const totalPotentialRemainingEarnings = potentialRemainingEarnings + todayRemainingPotential
+
+  const thisWeekProjectedSavings =
+    weeklyEarned + totalPotentialRemainingEarnings - totalWeeklyPayables - currentWeekExpenses
+
   const startingBalance = dashboardData?.startingBalance || 0
 
-  // Calculate Cash on Hand (current cash)
-  // Cash on Hand = Starting Balance + Total Income - Total Expenses
-  // Note: We do NOT subtract paidPayablesAmount because bill payments are already recorded as expense transactions
   const totalIncome = Array.isArray(transactions)
     ? transactions.filter((t) => t?.type === "income").reduce((sum, t) => sum + (t?.amount || 0), 0)
     : 0
@@ -376,40 +375,47 @@ export default function BudgetingApp() {
     ? transactions.filter((t) => t?.type === "expense").reduce((sum, t) => sum + Math.abs(t?.amount || 0), 0)
     : 0
 
-  // FIXED: Removed paidPayablesAmount subtraction to prevent double-counting
   const cashOnHand = startingBalance + totalIncome - totalExpenses
 
-  // Handle payment - bill payments are recorded as expense transactions only
-  const handlePayment = (payableId: number, amount: number) => {
-    // Update payable status
-    const updatedPayables = weeklyPayables.map((payable) => {
-      if (payable.id === payableId) {
-        const newPaidCount = (payable.paidCount || 0) + 1
-        let newStatus = "paid"
+  const handlePayment = (payableId: number, amount: number, source?: string) => {
+    if (source === "monthly") {
+      const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "[]")
+      const updatedMonthlyPayables = monthlyPayables.map((payable: any) =>
+        payable.id === payableId ? { ...payable, status: "paid" } : payable,
+      )
+      safeLocalStorage.setItem("monthlyPayables", JSON.stringify(updatedMonthlyPayables))
+    } else {
+      const updatedPayables = weeklyPayables.map((payable) => {
+        if (payable.id === payableId) {
+          const newPaidCount = (payable.paidCount || 0) + 1
+          let newStatus = "paid"
 
-        // Smart completion logic
-        if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
-          newStatus = "completed"
-        } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
-          newStatus = "completed"
+          if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
+            newStatus = "completed"
+          } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
+            newStatus = "completed"
+          }
+
+          return {
+            ...payable,
+            status: newStatus,
+            paidCount: newPaidCount,
+          }
         }
+        return payable
+      })
 
-        return {
-          ...payable,
-          status: newStatus,
-          paidCount: newPaidCount,
-        }
-      }
-      return payable
-    })
+      setWeeklyPayables(updatedPayables)
+    }
 
-    setWeeklyPayables(updatedPayables)
+    const payableName =
+      source === "monthly"
+        ? getMonthlyPayablesForCurrentWeek().find((p) => p.id === payableId)?.name
+        : weeklyPayables.find((p) => p.id === payableId)?.name
 
-    // Add payment as expense transaction
-    // This will automatically reduce cash on hand through the totalExpenses calculation
     const paymentTransaction = {
       id: Date.now(),
-      description: `Payment: ${weeklyPayables.find((p) => p.id === payableId)?.name || "Bill"}`,
+      description: `Payment: ${payableName || "Bill"}`,
       amount: -amount,
       type: "expense" as const,
       category: "Bills",
@@ -419,20 +425,17 @@ export default function BudgetingApp() {
     setTransactions((prev) => [paymentTransaction, ...prev])
   }
 
-  // Clear all data function
   const clearAllData = () => {
     if (
       typeof window !== "undefined" &&
       window.confirm("Are you sure you want to clear all data? This action cannot be undone.")
     ) {
-      // Clear localStorage
       safeLocalStorage.removeItem("dailyBudgetAppData")
       safeLocalStorage.removeItem("monthlyPayables")
       safeLocalStorage.removeItem("biweeklyPayables")
       safeLocalStorage.removeItem("weeklyPayablesHistory")
       safeLocalStorage.removeItem("expenseCategories")
 
-      // Reset all state to empty/default values
       setDashboardData({
         startingBalance: 0,
         totalBalance: 0,
@@ -446,7 +449,6 @@ export default function BudgetingApp() {
       setTransactions([])
       setExpenseCategories(defaultExpenseCategories)
 
-      // Reset daily income to zero amounts but keep structure
       const resetDailyIncome = initializeDailyIncome().map((day) => ({
         ...day,
         amount: 0,
@@ -455,7 +457,93 @@ export default function BudgetingApp() {
     }
   }
 
-  // Show loading state until client-side hydration is complete
+  // AI Action Handlers - These functions can be called by the AI
+  const aiActionHandlers = {
+    addIncome: (amount: number, description?: string, isFinal?: boolean) => {
+      const transaction = {
+        id: Date.now(),
+        description: description || "work",
+        amount: amount,
+        type: "income" as const,
+        category: "Work",
+        date: new Date().toISOString().split("T")[0],
+        isFinalForDay: isFinal,
+      }
+      setTransactions((prev) => [transaction, ...prev])
+
+      const today = getCurrentDayManila()
+      const todayIndex = dailyIncome.findIndex((d) => d.day === today)
+      if (todayIndex !== -1) {
+        const updated = [...dailyIncome]
+        updated[todayIndex] = {
+          ...updated[todayIndex],
+          amount: updated[todayIndex].amount + amount,
+          isFinalForDay: isFinal || updated[todayIndex].isFinalForDay,
+        }
+        setDailyIncome(updated)
+      }
+    },
+
+    addExpense: (amount: number, category: string, description?: string) => {
+      const transaction = {
+        id: Date.now(),
+        description: description || category,
+        amount: -Math.abs(amount),
+        type: "expense" as const,
+        category: category,
+        date: new Date().toISOString().split("T")[0],
+      }
+      setTransactions((prev) => [transaction, ...prev])
+    },
+
+    markBillAsPaid: (billName: string) => {
+      const weeklyBill = weeklyPayables.find((p) => p.name.toLowerCase().includes(billName.toLowerCase()))
+      if (weeklyBill) {
+        handlePayment(weeklyBill.id, weeklyBill.amount, weeklyBill.source)
+        return true
+      }
+
+      const monthlyBills = getMonthlyPayablesForCurrentWeek()
+      const monthlyBill = monthlyBills.find((p) => p.name.toLowerCase().includes(billName.toLowerCase()))
+      if (monthlyBill) {
+        handlePayment(monthlyBill.id, monthlyBill.amount, "monthly")
+        return true
+      }
+
+      return false
+    },
+
+    getAppData: () => ({
+      cashOnHand,
+      startingBalance,
+      weeklyEarned,
+      weeklyGoal,
+      goalProgress,
+      todayIncome,
+      todayGoal,
+      todayIsFinal,
+      todayRemainingPotential,
+      currentWeekExpenses,
+      totalPendingPayables,
+      pendingPayables: pendingPayables.map((p) => ({
+        name: p.name,
+        amount: p.amount,
+        dueDay: p.dueDay,
+        status: p.status,
+      })),
+      thisWeekExpenses: thisWeekExpenseTransactions.map((e) => ({
+        description: e.description,
+        amount: Math.abs(e.amount),
+        category: e.category,
+        date: e.date,
+      })),
+      remainingWorkDays: remainingWorkDays.length,
+      potentialRemainingEarnings: totalPotentialRemainingEarnings,
+      thisWeekProjectedSavings,
+      currency,
+    }),
+  }
+
   if (!isClient) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center">
@@ -471,11 +559,10 @@ export default function BudgetingApp() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
       <OfflineIndicator />
       <div className="max-w-md mx-auto bg-white/10 backdrop-blur-lg min-h-screen relative">
-        {/* App Header */}
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v98</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v100</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -499,12 +586,12 @@ export default function BudgetingApp() {
             </div>
           </div>
 
-          {/* Today's Summary - Real-time */}
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-purple-100">
                 Today's Earnings ({getCurrentDayManila()})
                 {!todayData?.isWorkDay && <span className="text-xs"> - Rest Day</span>}
+                {todayIsFinal && <span className="text-xs"> - ✓ Final</span>}
               </span>
               <span className="text-xs text-purple-200">
                 Goal: {currency}
@@ -525,6 +612,11 @@ export default function BudgetingApp() {
                   </span>
                   <span>{((todayIncome / todayGoal) * 100).toFixed(0)}%</span>
                 </div>
+                {todayIsFinal && (
+                  <div className="mt-2 text-xs text-purple-100 bg-white/10 px-2 py-1 rounded">
+                    ✓ Earnings marked as final for today
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-xs text-purple-200 mt-1">Rest Day - No Goal Set</div>
@@ -532,12 +624,9 @@ export default function BudgetingApp() {
           </div>
         </div>
 
-        {/* Main Content with bottom padding for navigation */}
         <div className="p-4 pb-28">
-          {/* HOME TAB */}
           {activeTab === "home" && (
             <div className="space-y-4">
-              {/* Quick Stats - Real-time with new balance logic */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="Cash on Hand"
@@ -548,7 +637,7 @@ export default function BudgetingApp() {
                 />
                 <OptimizedCard
                   title="Future Balance"
-                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings - totalPendingPayables)}`}
+                  value={`${currency}${safeToLocaleString(cashOnHand + totalPotentialRemainingEarnings - totalPendingPayables)}`}
                   subtitle="(this week)"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-blue-500 to-indigo-600"
@@ -556,7 +645,6 @@ export default function BudgetingApp() {
                 />
               </div>
 
-              {/* Weekly Progress - Real-time */}
               <Card className="bg-white/80 backdrop-blur-sm border-0">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg text-gray-800">Weekly Progress (Work Days Only)</CardTitle>
@@ -583,11 +671,10 @@ export default function BudgetingApp() {
                 </CardContent>
               </Card>
 
-              {/* Updated Savings Tracker */}
               <div className="grid grid-cols-2 gap-3">
                 <OptimizedCard
                   title="If Goals Met"
-                  value={`${currency}${safeToLocaleString(cashOnHand + potentialRemainingEarnings)}`}
+                  value={`${currency}${safeToLocaleString(cashOnHand + totalPotentialRemainingEarnings)}`}
                   subtitle="Projected Balance"
                   icon={TrendingUp}
                   gradient="bg-gradient-to-br from-green-500 to-emerald-600"
@@ -603,10 +690,8 @@ export default function BudgetingApp() {
                 />
               </div>
 
-              {/* Daily Income Chart - Real-time */}
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
 
-              {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   onClick={() => setShowAddTransaction(true)}
@@ -623,7 +708,6 @@ export default function BudgetingApp() {
             </div>
           )}
 
-          {/* INCOME TAB */}
           {activeTab === "income" && (
             <div className="space-y-4">
               <DailyIncomeChart dailyIncome={dailyIncome} currency={currency} />
@@ -652,6 +736,9 @@ export default function BudgetingApp() {
                               {day?.day} {day?.isToday && "(Today)"}
                               {!day?.isWorkDay && (
                                 <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Rest Day</span>
+                              )}
+                              {day?.isFinalForDay && (
+                                <span className="text-xs bg-green-200 text-green-700 px-2 py-1 rounded">✓ Final</span>
                               )}
                             </p>
                             <p className="text-xs text-gray-600">
@@ -692,7 +779,6 @@ export default function BudgetingApp() {
             </div>
           )}
 
-          {/* EXPENSES TAB - Simplified to only show expenses list */}
           {activeTab === "expenses" && (
             <div className="space-y-4">
               <Card className="bg-white/80 backdrop-blur-sm border-0">
@@ -749,7 +835,6 @@ export default function BudgetingApp() {
             </div>
           )}
 
-          {/* PAYABLES TAB */}
           {activeTab === "payables" && (
             <div className="space-y-4">
               <WeeklyPayablesCard
@@ -761,7 +846,6 @@ export default function BudgetingApp() {
             </div>
           )}
 
-          {/* TRANSACTIONS TAB */}
           {activeTab === "transactions" && (
             <div className="space-y-4">
               <TransactionList transactions={transactions} currency={currency} />
@@ -769,10 +853,8 @@ export default function BudgetingApp() {
           )}
         </div>
 
-        {/* Bottom Navigation - Fixed with higher z-index */}
         <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-white/95 backdrop-blur-lg border-t border-white/20 shadow-lg">
           <div className="max-w-md mx-auto flex items-center justify-center py-2 px-4">
-            {/* Left side buttons */}
             <div className="flex flex-1 justify-around">
               <Button
                 variant="ghost"
@@ -792,20 +874,18 @@ export default function BudgetingApp() {
               </Button>
             </div>
 
-            {/* Center Plus Button */}
-            <div className="mx-4">
+            <div className="mx-4 relative">
               <Button
-                onClick={() => {
-                  setQuickActionType(null)
-                  setShowAddTransaction(true)
-                }}
+                onClick={() => setShowAI(true)}
                 className="w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
               >
-                <Plus className="w-6 h-6" />
+                <Bot className="w-6 h-6" />
               </Button>
+              <Badge className="absolute -top-1 -right-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-1.5 py-0.5 text-[10px] animate-pulse">
+                <Sparkles className="w-2.5 h-2.5" />
+              </Badge>
             </div>
 
-            {/* Right side buttons */}
             <div className="flex flex-1 justify-around">
               <Button
                 variant="ghost"
@@ -827,13 +907,11 @@ export default function BudgetingApp() {
           </div>
         </div>
 
-        {/* Dialogs */}
         <AddTransactionDialog
           open={showAddTransaction}
           onOpenChange={setShowAddTransaction}
           onAddTransaction={(transaction) => {
             setTransactions([{ ...transaction, id: Date.now() }, ...transactions])
-            // Update daily income if it's an income transaction for today
             if (transaction.type === "income") {
               const today = getCurrentDayManila()
               const todayIndex = dailyIncome.findIndex((d) => d.day === today)
@@ -842,6 +920,7 @@ export default function BudgetingApp() {
                 updated[todayIndex] = {
                   ...updated[todayIndex],
                   amount: updated[todayIndex].amount + transaction.amount,
+                  isFinalForDay: transaction.isFinalForDay || updated[todayIndex].isFinalForDay,
                 }
                 setDailyIncome(updated)
               }
@@ -872,7 +951,6 @@ export default function BudgetingApp() {
           clearAllData={clearAllData}
         />
 
-        {/* Notifications Dialog */}
         {showNotifications && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
@@ -899,6 +977,13 @@ export default function BudgetingApp() {
             </div>
           </div>
         )}
+
+        <AIAssistant
+          open={showAI}
+          onOpenChange={setShowAI}
+          appData={aiActionHandlers.getAppData()}
+          actionHandlers={aiActionHandlers}
+        />
       </div>
     </div>
   )

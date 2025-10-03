@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Bell, BellOff, Calendar, CheckCircle, Clock, CreditCard, DollarSign } from "lucide-react"
 
-// Helper function to get current Manila time
 const getManilaTime = () => {
   return new Date().toLocaleString("en-US", {
     timeZone: "Asia/Manila",
@@ -21,26 +20,23 @@ const getManilaTime = () => {
   })
 }
 
-// Helper function to get week start date in Manila
 const getWeekStartManila = () => {
   const now = new Date()
   const manilaDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
   const dayOfWeek = manilaDate.getDay()
-  const diff = manilaDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Monday as start
+  const diff = manilaDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
   const weekStart = new Date(manilaDate.setDate(diff))
   return weekStart.toISOString().split("T")[0]
 }
 
-// Helper function to check if date is in current week
 const isDateInCurrentWeek = (dateString: string) => {
   const date = new Date(dateString)
   const weekStart = new Date(getWeekStartManila())
   const weekEnd = new Date(weekStart)
-  weekEnd.setDate(weekStart.getDate() + 6) // Sunday
+  weekEnd.setDate(weekStart.getDate() + 6)
   return date >= weekStart && date <= weekEnd
 }
 
-// Helper function to get current month info
 const getCurrentMonthInfo = () => {
   const now = new Date()
   const year = now.getFullYear()
@@ -51,7 +47,6 @@ const getCurrentMonthInfo = () => {
   return { year, month, monthName, daysInMonth }
 }
 
-// Safe localStorage access
 const safeLocalStorage = {
   getItem: (key: string) => {
     if (typeof window !== "undefined") {
@@ -70,7 +65,7 @@ interface WeeklyPayablesCardProps {
   weeklyPayables: any[]
   setWeeklyPayables: (payables: any[]) => void
   currency: string
-  onPayment?: (payableId: number, amount: number) => void
+  onPayment?: (payableId: number, amount: number, source?: string) => void
 }
 
 export function WeeklyPayablesCard({
@@ -95,18 +90,14 @@ export function WeeklyPayablesCard({
     }
   }
 
-  // Get monthly payables that fall within current week
   const getMonthlyPayablesForCurrentWeek = () => {
     const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "[]")
     const currentMonthInfo = getCurrentMonthInfo()
 
     return monthlyPayables
       .filter((payable: any) => {
-        // Create date for this month's due date
         const dueDate = new Date(currentMonthInfo.year, currentMonthInfo.month, payable.dayOfMonth)
         const dueDateString = dueDate.toISOString().split("T")[0]
-
-        // Check if due date falls in current week
         return isDateInCurrentWeek(dueDateString)
       })
       .map((payable: any) => ({
@@ -121,24 +112,20 @@ export function WeeklyPayablesCard({
       }))
   }
 
-  // Combine weekly payables with monthly payables that fall in current week
   const allCurrentWeekPayables = [...weeklyPayables, ...getMonthlyPayablesForCurrentWeek()]
 
-  const markAsPaid = (id: number) => {
+  const markAsPaid = (id: number, source?: string) => {
     const payable = allCurrentWeekPayables.find((p) => p.id === id)
     if (!payable) return
 
-    // Call the payment handler if provided (for balance deduction)
     if (onPayment) {
-      onPayment(id, payable.amount)
+      onPayment(id, payable.amount, source || payable.source)
     } else {
-      // Fallback to old behavior if no payment handler
       const updated = weeklyPayables.map((payable) => {
         if (payable.id === id) {
           const newPaidCount = (payable.paidCount || 0) + 1
           let newStatus = "paid"
 
-          // Smart completion logic
           if (payable.frequency === "twice-monthly" && newPaidCount >= 2) {
             newStatus = "completed"
           } else if (payable.frequency === "monthly" && newPaidCount >= 1) {
@@ -162,7 +149,6 @@ export function WeeklyPayablesCard({
   const totalPayables = allCurrentWeekPayables.reduce((sum, p) => sum + p.amount, 0)
   const completionRate = totalPayables > 0 ? ((totalPayables - totalPending) / totalPayables) * 100 : 0
 
-  // Group payables by source and day
   const saturdayPayables = allCurrentWeekPayables.filter((p) => p.dueDay === "Saturday" && p.source !== "monthly")
   const monthlyPayables = allCurrentWeekPayables.filter((p) => p.source === "monthly")
   const otherPayables = allCurrentWeekPayables.filter((p) => p.dueDay !== "Saturday" && p.source !== "monthly")
@@ -189,7 +175,6 @@ export function WeeklyPayablesCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Completion Progress */}
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span>Weekly Progress</span>
@@ -198,7 +183,6 @@ export function WeeklyPayablesCard({
           <Progress value={completionRate} className="h-2" />
         </div>
 
-        {/* Monthly Bills Section (Highlighted) */}
         {monthlyPayables.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-purple-600">
@@ -231,7 +215,7 @@ export function WeeklyPayablesCard({
                   {payable.status === "pending" ? (
                     <Button
                       size="sm"
-                      onClick={() => markAsPaid(payable.id)}
+                      onClick={() => markAsPaid(payable.id, "monthly")}
                       className="bg-purple-600 hover:bg-purple-700 h-8 px-3"
                     >
                       <CheckCircle className="w-3 h-3 mr-1" />
@@ -252,7 +236,6 @@ export function WeeklyPayablesCard({
           </div>
         )}
 
-        {/* Saturday Bills Section (Highlighted) */}
         {saturdayPayables.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
@@ -306,7 +289,6 @@ export function WeeklyPayablesCard({
           </div>
         )}
 
-        {/* Other Bills Section */}
         {otherPayables.length > 0 && (
           <div className="space-y-3">
             {(saturdayPayables.length > 0 || monthlyPayables.length > 0) && (
@@ -362,7 +344,6 @@ export function WeeklyPayablesCard({
           </div>
         )}
 
-        {/* Empty State */}
         {allCurrentWeekPayables.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -371,7 +352,6 @@ export function WeeklyPayablesCard({
           </div>
         )}
 
-        {/* Notification Status */}
         {allCurrentWeekPayables.length > 0 && (
           <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
             <span>{notificationsEnabled ? "Notifications enabled" : "Notifications disabled"}</span>

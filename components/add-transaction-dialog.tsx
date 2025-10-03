@@ -1,18 +1,26 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Minus } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface AddTransactionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAddTransaction: (transaction: any) => void
+  onAddTransaction: (transaction: {
+    description: string
+    amount: number
+    type: "income" | "expense"
+    category: string
+    date: string
+    isFinalForDay?: boolean
+  }) => void
   budgetCategories: any[]
   expenseCategories: string[]
   currency: string
@@ -28,112 +36,100 @@ export function AddTransactionDialog({
   currency,
   defaultDescription = "work",
 }: AddTransactionDialogProps) {
-  const [activeTab, setActiveTab] = useState("income")
+  const [type, setType] = useState<"income" | "expense">("income")
   const [amount, setAmount] = useState("")
-  const [category, setCategory] = useState("Work") // Pre-fill with "Work" for income
+  const [description, setDescription] = useState(defaultDescription)
+  const [category, setCategory] = useState("")
+  const [isFinalForDay, setIsFinalForDay] = useState(false)
 
-  const handleSubmit = (type: "income" | "expense") => {
-    if (!amount || !category) return
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
 
-    const transaction = {
-      amount: type === "expense" ? -Math.abs(Number.parseFloat(amount)) : Number.parseFloat(amount),
-      type,
-      category,
-      description: type === "income" ? defaultDescription : category, // Use default "work" for income
-      date: new Date().toISOString().split("T")[0],
+    if (!amount || Number(amount) <= 0) {
+      alert("Please enter a valid amount")
+      return
     }
 
-    onAddTransaction(transaction)
+    if (type === "expense" && !category) {
+      alert("Please select a category")
+      return
+    }
+
+    onAddTransaction({
+      description: description || (type === "income" ? "work" : category),
+      amount: type === "income" ? Number(amount) : -Number(amount),
+      type,
+      category: type === "income" ? "Work" : category,
+      date: new Date().toISOString().split("T")[0],
+      isFinalForDay: type === "income" ? isFinalForDay : undefined,
+    })
 
     // Reset form
     setAmount("")
-    setCategory(type === "income" ? "Work" : "") // Reset to "Work" for income, empty for expense
+    setDescription(defaultDescription)
+    setCategory("")
+    setIsFinalForDay(false)
     onOpenChange(false)
   }
 
-  // When switching tabs, reset category appropriately
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab)
-    if (tab === "income") {
-      setCategory("Work") // Pre-fill "Work" when switching to income tab
+  const handleTypeChange = (newType: "income" | "expense") => {
+    setType(newType)
+    setCategory("")
+    if (newType === "income") {
+      setDescription(defaultDescription)
     } else {
-      setCategory("") // Clear category when switching to expense tab
+      setDescription("")
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Add Transaction</DialogTitle>
+          <DialogDescription>Add a new income or expense to your budget.</DialogDescription>
         </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="type">Type</Label>
+            <Select value={type} onValueChange={(value: "income" | "expense") => handleTypeChange(value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="income">Income</SelectItem>
+                <SelectItem value="expense">Expense</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="income" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Income
-            </TabsTrigger>
-            <TabsTrigger value="expense" className="flex items-center gap-2">
-              <Minus className="w-4 h-4" />
-              Expense
-            </TabsTrigger>
-          </TabsList>
+          <div className="space-y-2">
+            <Label htmlFor="amount">Amount ({currency})</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+          </div>
 
-          <TabsContent value="income" className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Input
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={type === "income" ? "work" : "Enter description"}
+            />
+          </div>
+
+          {type === "expense" && (
             <div className="space-y-2">
-              <Label htmlFor="income-amount">Amount ({currency})</Label>
-              <Input
-                id="income-amount"
-                type="number"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="income-category">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Work">Work</SelectItem>
-                  <SelectItem value="Freelance">Freelance</SelectItem>
-                  <SelectItem value="Business">Business</SelectItem>
-                  <SelectItem value="Investment">Investment</SelectItem>
-                  <SelectItem value="Gift">Gift</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={() => handleSubmit("income")}
-              className="w-full bg-green-600 hover:bg-green-700"
-              disabled={!amount || !category}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Income
-            </Button>
-          </TabsContent>
-
-          <TabsContent value="expense" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="expense-amount">Amount ({currency})</Label>
-              <Input
-                id="expense-amount"
-                type="number"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="expense-category">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
+              <Label htmlFor="category">Category</Label>
+              <Select value={category} onValueChange={setCategory} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
@@ -146,17 +142,38 @@ export function AddTransactionDialog({
                 </SelectContent>
               </Select>
             </div>
+          )}
 
-            <Button
-              onClick={() => handleSubmit("expense")}
-              className="w-full bg-red-600 hover:bg-red-700"
-              disabled={!amount || !category}
-            >
-              <Minus className="w-4 h-4 mr-2" />
-              Add Expense
+          {type === "income" && (
+            <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <Checkbox
+                id="finalForDay"
+                checked={isFinalForDay}
+                onCheckedChange={(checked) => setIsFinalForDay(checked as boolean)}
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="finalForDay"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  This is all my earnings for today
+                </Label>
+                <p className="text-xs text-gray-600 mt-1">
+                  Check this if you won't add any more income today. This will update your projections.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+              Cancel
             </Button>
-          </TabsContent>
-        </Tabs>
+            <Button type="submit" className="flex-1">
+              Add Transaction
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   )
