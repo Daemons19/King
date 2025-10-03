@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,98 +13,59 @@ import { Checkbox } from "@/components/ui/checkbox"
 interface AddTransactionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAddTransaction: (transaction: {
-    description: string
-    amount: number
+  type: "income" | "expense"
+  onAdd: (transaction: {
     type: "income" | "expense"
+    amount: number
+    description: string
     category: string
     date: string
-    isFinalForDay?: boolean
+    isFinalEarnings?: boolean
   }) => void
-  budgetCategories: any[]
-  expenseCategories: string[]
-  currency: string
-  defaultDescription?: string
 }
 
-export function AddTransactionDialog({
-  open,
-  onOpenChange,
-  onAddTransaction,
-  budgetCategories,
-  expenseCategories,
-  currency,
-  defaultDescription = "work",
-}: AddTransactionDialogProps) {
-  const [type, setType] = useState<"income" | "expense">("income")
+export function AddTransactionDialog({ open, onOpenChange, type, onAdd }: AddTransactionDialogProps) {
   const [amount, setAmount] = useState("")
-  const [description, setDescription] = useState(defaultDescription)
-  const [category, setCategory] = useState("")
-  const [isFinalForDay, setIsFinalForDay] = useState(false)
+  const [description, setDescription] = useState(type === "income" ? "work" : "")
+  const [category, setCategory] = useState(type === "income" ? "work" : "Food")
+  const [isFinalEarnings, setIsFinalEarnings] = useState(false)
+
+  const expenseCategories = ["Food", "Transport", "Bills", "Entertainment", "Shopping", "Other"]
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!amount || Number(amount) <= 0) {
+    const numAmount = Number.parseFloat(amount)
+    if (isNaN(numAmount) || numAmount <= 0) {
       alert("Please enter a valid amount")
       return
     }
 
-    if (type === "expense" && !category) {
-      alert("Please select a category")
-      return
-    }
-
-    onAddTransaction({
-      description: description || (type === "income" ? "work" : category),
-      amount: type === "income" ? Number(amount) : -Number(amount),
+    onAdd({
       type,
-      category: type === "income" ? "Work" : category,
-      date: new Date().toISOString().split("T")[0],
-      isFinalForDay: type === "income" ? isFinalForDay : undefined,
+      amount: numAmount,
+      description: description.trim() || (type === "income" ? "work" : category),
+      category: type === "income" ? "work" : category,
+      date: new Date().toISOString(),
+      isFinalEarnings: type === "income" ? isFinalEarnings : undefined,
     })
 
-    // Reset form
     setAmount("")
-    setDescription(defaultDescription)
-    setCategory("")
-    setIsFinalForDay(false)
+    setDescription(type === "income" ? "work" : "")
+    setCategory(type === "income" ? "work" : "Food")
+    setIsFinalEarnings(false)
     onOpenChange(false)
-  }
-
-  const handleTypeChange = (newType: "income" | "expense") => {
-    setType(newType)
-    setCategory("")
-    if (newType === "income") {
-      setDescription(defaultDescription)
-    } else {
-      setDescription("")
-    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Transaction</DialogTitle>
-          <DialogDescription>Add a new income or expense to your budget.</DialogDescription>
+          <DialogTitle>{type === "income" ? "Add Income" : "Add Expense"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="type">Type</Label>
-            <Select value={type} onValueChange={(value: "income" | "expense") => handleTypeChange(value)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="income">Income</SelectItem>
-                <SelectItem value="expense">Expense</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="amount">Amount ({currency})</Label>
+          <div>
+            <Label htmlFor="amount">Amount (₱)</Label>
             <Input
               id="amount"
               type="number"
@@ -116,22 +77,12 @@ export function AddTransactionDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Input
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={type === "income" ? "work" : "Enter description"}
-            />
-          </div>
-
           {type === "expense" && (
-            <div className="space-y-2">
+            <div>
               <Label htmlFor="category">Category</Label>
-              <Select value={category} onValueChange={setCategory} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger id="category">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {expenseCategories.map((cat) => (
@@ -144,34 +95,42 @@ export function AddTransactionDialog({
             </div>
           )}
 
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Input
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={type === "income" ? "work" : "Enter description"}
+            />
+          </div>
+
           {type === "income" && (
-            <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-start space-x-2 bg-blue-50 dark:bg-blue-950 p-3 rounded-lg">
               <Checkbox
-                id="finalForDay"
-                checked={isFinalForDay}
-                onCheckedChange={(checked) => setIsFinalForDay(checked as boolean)}
+                id="finalEarnings"
+                checked={isFinalEarnings}
+                onCheckedChange={(checked) => setIsFinalEarnings(checked === true)}
               />
-              <div className="flex-1">
-                <Label
-                  htmlFor="finalForDay"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="finalEarnings"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
                   This is all my earnings for today
-                </Label>
-                <p className="text-xs text-gray-600 mt-1">
-                  Check this if you won't add any more income today. This will update your projections.
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Check this if you're done earning for the day. This helps calculate accurate projections.
                 </p>
               </div>
             </div>
           )}
 
-          <div className="flex gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1">
-              Add Transaction
-            </Button>
+            <Button type="submit">{type === "income" ? "Add Income" : "Add Expense"}</Button>
           </div>
         </form>
       </DialogContent>

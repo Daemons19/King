@@ -1,9 +1,4 @@
-import { OpenAI } from "openai"
 import { NextResponse } from "next/server"
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
 
 export const runtime = "edge"
 
@@ -11,53 +6,46 @@ export async function POST(req: Request) {
   try {
     const { message, appData, history } = await req.json()
 
-    // Build context from app data
-    const context = `
-You are a helpful AI budget assistant. You have access to the user's financial data and can help them manage their money.
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      console.error("OpenAI API key not found")
+      return NextResponse.json(
+        { message: "AI assistant is not configured. Please add your OpenAI API key.", actions: [] },
+        { status: 500 },
+      )
+    }
+
+    const context = `You are a helpful AI budget assistant for a personal finance app. You help users track expenses, manage bills, and make financial decisions.
 
 CURRENT USER DATA:
-- Cash on Hand: ${appData.currency}${appData.cashOnHand.toLocaleString()}
-- Starting Balance: ${appData.currency}${appData.startingBalance.toLocaleString()}
-- Today's Earnings: ${appData.currency}${appData.todayIncome.toLocaleString()}
-- Today's Goal: ${appData.currency}${appData.todayGoal.toLocaleString()}
-- Weekly Earned: ${appData.currency}${appData.weeklyEarned.toLocaleString()}
-- Weekly Goal: ${appData.currency}${appData.weeklyGoal.toLocaleString()}
-- Goal Progress: ${appData.goalProgress.toFixed(1)}%
-- This Week's Expenses: ${appData.currency}${appData.currentWeekExpenses.toLocaleString()}
-- Pending Bills Total: ${appData.currency}${appData.totalPendingPayables.toLocaleString()}
-- Remaining Work Days: ${appData.remainingWorkDays}
-- Potential Remaining Earnings: ${appData.currency}${appData.potentialRemainingEarnings.toLocaleString()}
-- This Week's Projected Savings: ${appData.currency}${appData.thisWeekProjectedSavings.toLocaleString()}
+- Cash on Hand: ${appData.currency}${appData.cashOnHand?.toLocaleString() || 0}
+- Starting Balance: ${appData.currency}${appData.startingBalance?.toLocaleString() || 0}
+- Today's Income: ${appData.currency}${appData.todayIncome?.toLocaleString() || 0}
+- Today's Goal: ${appData.currency}${appData.todayGoal?.toLocaleString() || 0}
+- Weekly Earned: ${appData.currency}${appData.weeklyEarned?.toLocaleString() || 0}
+- Weekly Goal: ${appData.currency}${appData.weeklyGoal?.toLocaleString() || 0}
+- This Week's Expenses: ${appData.currency}${appData.currentWeekExpenses?.toLocaleString() || 0}
+- Pending Bills: ${appData.currency}${appData.totalPendingPayables?.toLocaleString() || 0}
 
 PENDING BILLS:
-${appData.pendingPayables.map((p: any) => `- ${p.name}: ${appData.currency}${p.amount.toLocaleString()} (due ${p.dueDay})`).join("\n") || "None"}
+${appData.pendingPayables?.map((p: any) => `- ${p.name}: ${appData.currency}${p.amount} (due ${p.dueDay})`).join("\n") || "None"}
 
-THIS WEEK'S EXPENSES:
-${appData.thisWeekExpenses.map((e: any) => `- ${e.description}: ${appData.currency}${e.amount.toLocaleString()} (${e.category}, ${e.date})`).join("\n") || "None"}
+RECENT EXPENSES:
+${
+  appData.thisWeekExpenses
+    ?.slice(0, 5)
+    .map((e: any) => `- ${e.description}: ${appData.currency}${e.amount} (${e.category})`)
+    .join("\n") || "None"
+}
 
-AVAILABLE ACTIONS:
-You can execute the following actions by including them in your response:
-1. addIncome(amount, description) - Add income/earnings
-2. addExpense(amount, category, description) - Log an expense
-3. markBillAsPaid(billName) - Mark a bill as paid
-
-To execute actions, include a JSON array in your response like this:
+You can perform actions by responding with:
 ACTIONS: [{"type": "addIncome", "amount": 500, "description": "work"}]
+ACTIONS: [{"type": "addExpense", "amount": 100, "category": "Food", "description": "lunch"}]
+ACTIONS: [{"type": "markBillAsPaid", "billName": "Groceries"}]
 
-INSTRUCTIONS:
-- Be friendly, helpful, and concise
-- Use the currency symbol ${appData.currency} when talking about money
-- When asked to take actions, confirm what you're doing
-- Provide financial insights and advice when appropriate
-- If user asks to add income, add expense, or pay bills, execute the action
-- Always format numbers with commas for readability
-- Be proactive in suggesting actions if you notice issues
+Be friendly, concise, and helpful. Use ${appData.currency} when talking about money.`
 
-Remember: You can modify the app data by returning actions. Always confirm actions you've taken.
-`
-
-    // Build messages for OpenAI
-    const messages: any[] = [
+    const messages = [
       { role: "system", content: context },
       ...history.map((msg: any) => ({
         role: msg.role,
@@ -66,16 +54,29 @@ Remember: You can modify the app data by returning actions. Always confirm actio
       { role: "user", content: message },
     ]
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 500,
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
     })
 
-    const responseText = completion.choices[0].message.content || "I'm sorry, I couldn't process that."
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("OpenAI API error:", errorText)
+      throw new Error(`OpenAI API failed: ${response.status}`)
+    }
 
-    // Parse actions from response
+    const data = await response.json()
+    const responseText = data.choices[0]?.message?.content || "I'm sorry, I couldn't process that."
+
     const actionMatch = responseText.match(/ACTIONS:\s*(\[.*?\])/s)
     let actions = []
     let cleanedResponse = responseText

@@ -3,38 +3,30 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
-import { Bot, Send, Mic, MicOff, Loader2, Sparkles, User } from "lucide-react"
+import { Mic, Send, X, Sparkles, Loader2 } from "lucide-react"
 
 interface Message {
   role: "user" | "assistant"
   content: string
-  timestamp: Date
 }
 
 interface AIAssistantProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  isOpen: boolean
+  onClose: () => void
   appData: any
-  actionHandlers: {
-    addIncome: (amount: number, description?: string) => void
-    addExpense: (amount: number, category: string, description?: string) => void
-    markBillAsPaid: (billName: string) => boolean
-    getAppData: () => any
-  }
+  onExecuteAction: (action: any) => void
 }
 
-export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIAssistantProps) {
+export function AIAssistant({ isOpen, onClose, appData, onExecuteAction }: AIAssistantProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Hi! I'm your Budget AI Assistant. I can help you track your finances, answer questions about your spending, and manage your bills. Try asking me things like:\n\n• How much did I spend this week?\n• What bills are pending?\n• Add ₱500 to earnings\n• Mark Groceries as paid",
-      timestamp: new Date(),
+        "Hi! I'm your AI budget assistant. I can help you track expenses, manage bills, and answer questions about your finances. Try asking me 'How much did I spend this week?' or 'Add ₱500 to earnings'.",
     },
   ])
   const [input, setInput] = useState("")
@@ -43,10 +35,15 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
 
-  // Initialize speech recognition
   useEffect(() => {
-    if (typeof window !== "undefined" && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [messages])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "webkitSpeechRecognition" in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition
       recognitionRef.current = new SpeechRecognition()
       recognitionRef.current.continuous = false
       recognitionRef.current.interimResults = false
@@ -58,8 +55,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
         setIsListening(false)
       }
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error)
+      recognitionRef.current.onerror = () => {
         setIsListening(false)
       }
 
@@ -67,59 +63,35 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
         setIsListening(false)
       }
     }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-    }
   }, [])
 
-  // Auto scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
-
-  const toggleVoiceInput = () => {
-    if (!recognitionRef.current) {
-      alert("Voice recognition is not supported in your browser. Please use Chrome or Edge.")
-      return
-    }
-
-    if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
-    } else {
-      recognitionRef.current.start()
+  const startVoiceInput = () => {
+    if (recognitionRef.current) {
       setIsListening(true)
+      recognitionRef.current.start()
+    } else {
+      alert("Voice input not supported in your browser. Please use Chrome or Edge.")
     }
   }
 
-  const handleSend = async () => {
+  const sendMessage = async () => {
     if (!input.trim() || isLoading) return
 
-    const userMessage: Message = {
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
+    const userMessage = input.trim()
     setInput("")
+
+    const newMessages = [...messages, { role: "user" as const, content: userMessage }]
+    setMessages(newMessages)
     setIsLoading(true)
 
     try {
       const response = await fetch("/api/ai-chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: input.trim(),
+          message: userMessage,
           appData: appData,
-          history: messages.slice(-10), // Send last 10 messages for context
+          history: messages,
         }),
       })
 
@@ -129,38 +101,22 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
       const data = await response.json()
 
-      // Execute any actions the AI requested
-      if (data.actions && Array.isArray(data.actions)) {
+      setMessages([...newMessages, { role: "assistant", content: data.message }])
+
+      if (data.actions && data.actions.length > 0) {
         for (const action of data.actions) {
-          switch (action.type) {
-            case "addIncome":
-              actionHandlers.addIncome(action.amount, action.description)
-              break
-            case "addExpense":
-              actionHandlers.addExpense(action.amount, action.category, action.description)
-              break
-            case "markBillAsPaid":
-              actionHandlers.markBillAsPaid(action.billName)
-              break
-          }
+          onExecuteAction(action)
         }
       }
-
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: data.message,
-        timestamp: new Date(),
-      }
-
-      setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
       console.error("AI chat error:", error)
-      const errorMessage: Message = {
-        role: "assistant",
-        content: "Sorry, I encountered an error. Please try again.",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: "I'm having trouble connecting right now. Please try again in a moment.",
+        },
+      ])
     } finally {
       setIsLoading(false)
     }
@@ -169,95 +125,75 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      sendMessage()
     }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl h-[80vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white">
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Bot className="w-6 h-6" />
-            Budget AI Assistant
-            <Badge className="ml-2 bg-white/20 text-white">
-              <Sparkles className="w-3 h-3 mr-1" />
-              AI Powered
-            </Badge>
-          </DialogTitle>
-          <p className="text-purple-100 text-sm mt-2">
-            Ask me about your finances, or tell me to take actions like adding income or paying bills.
-          </p>
-        </DialogHeader>
+  if (!isOpen) return null
 
-        <ScrollArea className="flex-1 p-6" ref={scrollRef}>
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4">
+      <Card className="w-full max-w-2xl h-[80vh] sm:h-[600px] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-500 to-pink-500">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-white" />
+            <h2 className="text-lg font-semibold text-white">AI Budget Assistant</h2>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="text-white hover:bg-white/20">
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
           <div className="space-y-4">
-            {messages.map((message, index) => (
-              <div key={index} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                {message.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-5 h-5 text-white" />
-                  </div>
-                )}
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[80%] rounded-2xl p-4 ${
-                    message.role === "user"
-                      ? "bg-gradient-to-br from-purple-600 to-pink-600 text-white"
-                      : "bg-gray-100 text-gray-800"
+                  className={`max-w-[80%] rounded-lg p-3 ${
+                    msg.role === "user"
+                      ? "bg-purple-500 text-white"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                  <p className={`text-xs mt-2 ${message.role === "user" ? "text-purple-200" : "text-gray-500"}`}>
-                    {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </p>
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 </div>
-                {message.role === "user" && (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center flex-shrink-0">
-                    <User className="w-5 h-5 text-white" />
-                  </div>
-                )}
               </div>
             ))}
             {isLoading && (
-              <div className="flex gap-3 justify-start">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-5 h-5 text-white" />
-                </div>
-                <div className="bg-gray-100 text-gray-800 rounded-2xl p-4">
-                  <Loader2 className="w-5 h-5 animate-spin" />
+              <div className="flex justify-start">
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 </div>
               </div>
             )}
           </div>
         </ScrollArea>
 
-        <div className="p-6 pt-4 border-t">
+        <div className="p-4 border-t">
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="icon"
-              onClick={toggleVoiceInput}
-              className={`flex-shrink-0 ${isListening ? "bg-red-100 text-red-600 border-red-300" : ""}`}
+              onClick={startVoiceInput}
+              disabled={isListening}
+              className={isListening ? "animate-pulse bg-red-50" : ""}
             >
-              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              <Mic className={`h-4 w-4 ${isListening ? "text-red-500" : ""}`} />
             </Button>
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={isListening ? "Listening..." : "Ask me anything about your finances..."}
-              className="flex-1"
+              placeholder={isListening ? "Listening..." : "Ask me anything about your budget..."}
               disabled={isLoading || isListening}
+              className="flex-1"
             />
-            <Button onClick={handleSend} disabled={!input.trim() || isLoading} className="flex-shrink-0">
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            <Button onClick={sendMessage} disabled={!input.trim() || isLoading}>
+              <Send className="h-4 w-4" />
             </Button>
           </div>
-          {isListening && (
-            <p className="text-sm text-center text-purple-600 mt-2 animate-pulse">🎤 Listening... Speak now!</p>
-          )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Card>
+    </div>
   )
 }

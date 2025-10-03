@@ -2,85 +2,109 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Target } from "lucide-react"
+import { CheckCircle2 } from "lucide-react"
 
-interface DailyIncomeChartProps {
-  dailyIncome: any[]
-  currency: string
+interface Transaction {
+  id: string
+  type: "income" | "expense"
+  amount: number
+  date: string
 }
 
-export function DailyIncomeChart({ dailyIncome, currency }: DailyIncomeChartProps) {
-  // Real-time calculations - recalculated on every render
-  const workDays = dailyIncome.filter((day) => day.isWorkDay)
-  const totalEarned = workDays.reduce((sum, day) => sum + (day.amount || 0), 0)
-  const totalGoal = workDays.reduce((sum, day) => sum + (day.goal || 0), 0)
-  const progress = totalGoal > 0 ? (totalEarned / totalGoal) * 100 : 0
+interface DayEarnings {
+  [key: string]: {
+    amount: number
+    isFinal: boolean
+  }
+}
+
+interface DailyIncomeChartProps {
+  weekDates: Date[]
+  transactions: Transaction[]
+  workDays: string[]
+  dailyGoal: number
+  currency: string
+  dayEarnings: DayEarnings
+}
+
+export function DailyIncomeChart({
+  weekDates,
+  transactions,
+  workDays,
+  dailyGoal,
+  currency,
+  dayEarnings,
+}: DailyIncomeChartProps) {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+  const shortDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+  const getDailyIncome = (date: Date) => {
+    return transactions
+      .filter((t) => {
+        const tDate = new Date(t.date)
+        tDate.setHours(0, 0, 0, 0)
+        const compareDate = new Date(date)
+        compareDate.setHours(0, 0, 0, 0)
+        return t.type === "income" && tDate.getTime() === compareDate.getTime()
+      })
+      .reduce((sum, t) => sum + t.amount, 0)
+  }
 
   return (
-    <Card className="bg-white/80 backdrop-blur-sm border-0">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg text-gray-800 flex items-center gap-2">
-          <Target className="w-5 h-5 text-green-600" />
-          Work Days Progress (Real-time)
-        </CardTitle>
-        <CardDescription>This week's earnings vs goals ({workDays.length} work days)</CardDescription>
+    <Card>
+      <CardHeader>
+        <CardTitle>Daily Income</CardTitle>
+        <CardDescription>Track your daily earnings for this week</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {/* Overall Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Weekly Progress</span>
-              <span className="font-medium">{progress.toFixed(0)}%</span>
-            </div>
-            <Progress value={Math.min(progress, 100)} className="h-3" />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>
-                {currency}
-                {totalEarned.toLocaleString()} earned
-              </span>
-              <span>
-                {currency}
-                {totalGoal.toLocaleString()} goal
-              </span>
-            </div>
-          </div>
+        <div className="grid grid-cols-7 gap-2">
+          {weekDates.map((date, index) => {
+            const dayName = days[date.getDay()]
+            const isWorkDay = workDays.includes(dayName)
+            const goal = isWorkDay ? dailyGoal : 0
+            const income = getDailyIncome(date)
+            const progress = goal > 0 ? (income / goal) * 100 : 0
 
-          {/* Mini Daily Bars */}
-          <div className="grid grid-cols-7 gap-1">
-            {dailyIncome.map((day, index) => {
-              const dayProgress = (day.goal || 0) > 0 ? ((day.amount || 0) / day.goal) * 100 : 0
-              return (
-                <div key={index} className="text-center">
-                  <div className="text-xs text-gray-600 mb-1">{day.day}</div>
-                  {day.isWorkDay ? (
-                    <>
-                      <div className="h-8 bg-gray-200 rounded relative overflow-hidden">
-                        <div
-                          className={`absolute bottom-0 left-0 right-0 rounded transition-all ${
-                            dayProgress >= 100 ? "bg-green-500" : dayProgress > 0 ? "bg-orange-400" : "bg-gray-300"
-                          }`}
-                          style={{ height: `${Math.min(dayProgress, 100)}%` }}
-                        />
-                        {day.isToday && <div className="absolute inset-0 border-2 border-purple-400 rounded"></div>}
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const isToday = date.getTime() === today.getTime()
+            const isPast = date < today
+
+            const dateKey = date.toISOString().split("T")[0]
+            const isDayFinal = dayEarnings[dateKey]?.isFinal
+
+            return (
+              <div
+                key={index}
+                className={`p-2 rounded-lg text-center ${
+                  isToday ? "bg-purple-100 dark:bg-purple-900 ring-2 ring-purple-500" : "bg-muted"
+                } ${!isWorkDay ? "opacity-50" : ""}`}
+              >
+                <div className="text-xs font-medium mb-1">{shortDays[date.getDay()]}</div>
+                <div className="text-xs text-muted-foreground mb-2">{date.getDate()}</div>
+                {isWorkDay ? (
+                  <>
+                    <div className="text-sm font-bold mb-1">
+                      {currency}
+                      {income.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                    <Progress value={progress} className="h-1 mb-1" />
+                    <div className="text-[10px] text-muted-foreground">
+                      {currency}
+                      {goal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                    {isDayFinal && (
+                      <div className="mt-1 flex justify-center">
+                        <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-400" />
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {currency}
-                        {(day.amount || 0).toLocaleString()}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="h-8 bg-gray-100 rounded flex items-center justify-center">
-                        <span className="text-xs text-gray-400">Rest</span>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">-</div>
-                    </>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground">Rest</div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
