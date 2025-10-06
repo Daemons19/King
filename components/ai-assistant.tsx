@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,13 +37,26 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   const [isLoading, setIsLoading] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  // Auto-scroll to bottom when messages change
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" })
     }
-  }, [messages])
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, isLoading])
+
+  // Scroll when dialog opens
+  useEffect(() => {
+    if (open) {
+      setTimeout(scrollToBottom, 100)
+    }
+  }, [open])
 
   useEffect(() => {
     // Initialize speech recognition
@@ -201,6 +213,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl h-[600px] flex flex-col">
+        {/* Purple/Pink Gradient Header */}
         <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-t-lg">
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -222,6 +235,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
           </Button>
         </div>
 
+        {/* Messages Area with Auto-Scroll */}
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
           <div className="space-y-4">
             {messages.map((message, index) => (
@@ -254,9 +268,12 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
                 </div>
               </div>
             )}
+            {/* Invisible div for auto-scroll target */}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
+        {/* Input Area */}
         <CardContent className="p-4 border-t">
           <div className="flex gap-2">
             <Button
@@ -276,7 +293,11 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
               disabled={isLoading || isListening}
               className="flex-1"
             />
-            <Button onClick={sendMessage} disabled={isLoading || !input.trim() || isListening} className="shrink-0">
+            <Button
+              onClick={sendMessage}
+              disabled={isLoading || !input.trim() || isListening}
+              className="shrink-0 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+            >
               <Send className="w-4 h-4" />
             </Button>
           </div>

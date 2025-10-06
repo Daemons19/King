@@ -4,42 +4,48 @@ export async function POST(req: Request) {
   try {
     const { messages, appData } = await req.json()
 
+    // Get API key from environment
     const apiKey = process.env.GROQ_API_KEY
+
     if (!apiKey) {
+      console.error("GROQ_API_KEY not found in environment")
       return new Response(
         JSON.stringify({
-          message: "Groq API key not configured. Please add GROQ_API_KEY to your environment variables.",
+          message: "⚠️ AI service not configured. Please add GROQ_API_KEY to environment variables.",
         }),
         {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          },
         },
       )
     }
 
-    // System message with app context
+    // Build system message with current app data
     const systemMessage = {
       role: "system",
       content: `You are a helpful AI assistant for a personal budgeting app. You have access to the user's financial data and can help them manage their money.
 
 Current App Data:
-- Currency: ${appData.currency}
-- Cash on Hand: ${appData.currency}${appData.cashOnHand.toLocaleString()}
-- Starting Balance: ${appData.currency}${appData.startingBalance.toLocaleString()}
-- Today's Income: ${appData.currency}${appData.todayIncome.toLocaleString()}
-- Today's Goal: ${appData.currency}${appData.todayGoal.toLocaleString()}
-- Weekly Earned: ${appData.currency}${appData.weeklyEarned.toLocaleString()}
-- Weekly Goal: ${appData.currency}${appData.weeklyGoal.toLocaleString()}
-- Weekly Progress: ${appData.goalProgress.toFixed(1)}%
-- This Week's Expenses: ${appData.currency}${appData.currentWeekExpenses.toLocaleString()}
-- Pending Bills: ${appData.currency}${appData.totalPendingPayables.toLocaleString()}
-- Projected Savings: ${appData.currency}${appData.thisWeekProjectedSavings.toLocaleString()}
+- Currency: ${appData?.currency || "₱"}
+- Cash on Hand: ${appData?.currency || "₱"}${(appData?.cashOnHand || 0).toLocaleString()}
+- Starting Balance: ${appData?.currency || "₱"}${(appData?.startingBalance || 0).toLocaleString()}
+- Today's Income: ${appData?.currency || "₱"}${(appData?.todayIncome || 0).toLocaleString()}
+- Today's Goal: ${appData?.currency || "₱"}${(appData?.todayGoal || 0).toLocaleString()}
+- Weekly Earned: ${appData?.currency || "₱"}${(appData?.weeklyEarned || 0).toLocaleString()}
+- Weekly Goal: ${appData?.currency || "₱"}${(appData?.weeklyGoal || 0).toLocaleString()}
+- Weekly Progress: ${(appData?.goalProgress || 0).toFixed(1)}%
+- This Week's Expenses: ${appData?.currency || "₱"}${(appData?.currentWeekExpenses || 0).toLocaleString()}
+- Pending Bills: ${appData?.currency || "₱"}${(appData?.totalPendingPayables || 0).toLocaleString()}
+- Projected Savings: ${appData?.currency || "₱"}${(appData?.thisWeekProjectedSavings || 0).toLocaleString()}
 
 Pending Bills:
-${appData.pendingPayables.length > 0 ? appData.pendingPayables.map((p: any) => `- ${p.name}: ${appData.currency}${p.amount.toLocaleString()} (due ${p.dueDay})`).join("\n") : "None"}
+${appData?.pendingPayables && appData.pendingPayables.length > 0 ? appData.pendingPayables.map((p: any) => `- ${p.name}: ${appData.currency}${p.amount.toLocaleString()} (due ${p.dueDay})`).join("\n") : "None"}
 
 This Week's Expenses:
-${appData.thisWeekExpenses.length > 0 ? appData.thisWeekExpenses.map((e: any) => `- ${e.description}: ${appData.currency}${e.amount.toLocaleString()} (${e.category})`).join("\n") : "None yet"}
+${appData?.thisWeekExpenses && appData.thisWeekExpenses.length > 0 ? appData.thisWeekExpenses.map((e: any) => `- ${e.description}: ${appData.currency}${e.amount.toLocaleString()} (${e.category})`).join("\n") : "None yet"}
 
 You can help users:
 1. Understand their financial situation
@@ -50,7 +56,7 @@ You can help users:
 
 When users ask you to perform actions, respond with a JSON object in this format:
 {
-  "message": "Your response to the user",
+  "message": "Your friendly response to the user",
   "action": {
     "type": "addIncome" | "addExpense" | "markBillAsPaid",
     "amount": number (for income/expense),
@@ -60,14 +66,13 @@ When users ask you to perform actions, respond with a JSON object in this format
   }
 }
 
-IMPORTANT: When you want to execute an action, YOU MUST respond with valid JSON only, nothing else.
 For regular conversation without actions, respond normally without JSON.
-
 Be conversational, helpful, and provide clear financial insights. Use emojis occasionally to be friendly.`,
     }
 
+    // Set up timeout for API call
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 25000) // 25 second timeout
 
     try {
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -91,29 +96,41 @@ Be conversational, helpful, and provide clear financial insights. Use emojis occ
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("Groq API error:", errorText)
+        console.error("Groq API error:", response.status, errorText)
 
-        return new Response(
-          JSON.stringify({
-            message: `Sorry, I encountered an error (${response.status}). Please try again.`,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+        let errorMessage = "Sorry, I encountered an error communicating with the AI service."
+
+        if (response.status === 401) {
+          errorMessage = "⚠️ AI service authentication failed. Please check your API key."
+        } else if (response.status === 429) {
+          errorMessage = "⚠️ Too many requests. Please wait a moment and try again."
+        } else if (response.status >= 500) {
+          errorMessage = "⚠️ AI service is temporarily unavailable. Please try again later."
+        }
+
+        return new Response(JSON.stringify({ message: errorMessage }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
           },
-        )
+        })
       }
 
       const data = await response.json()
 
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error("Invalid response structure:", data)
         return new Response(
           JSON.stringify({
-            message: "Sorry, I received an invalid response. Please try again.",
+            message: "Sorry, I received an unexpected response. Please try again.",
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache",
+            },
           },
         )
       }
@@ -123,7 +140,7 @@ Be conversational, helpful, and provide clear financial insights. Use emojis occ
       // Try to parse as JSON for actions
       let parsedResponse
       try {
-        // Try to extract JSON if wrapped in markdown code blocks
+        // Remove markdown code blocks if present
         let jsonContent = aiMessage
         const jsonMatch = aiMessage.match(/```json\s*([\s\S]*?)\s*```/)
         if (jsonMatch) {
@@ -138,35 +155,48 @@ Be conversational, helpful, and provide clear financial insights. Use emojis occ
 
       return new Response(JSON.stringify(parsedResponse), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
       })
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
 
       if (fetchError.name === "AbortError") {
+        console.error("Request timeout")
         return new Response(
           JSON.stringify({
-            message: "Request timed out. Please try again.",
+            message: "⏱️ Request timed out. Please check your internet connection and try again.",
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache",
+            },
           },
         )
       }
 
+      console.error("Fetch error:", fetchError)
       throw fetchError
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI chat error:", error)
-    return new Response(
-      JSON.stringify({
-        message: "Sorry, I encountered an error. Please check your internet connection and try again.",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+
+    let errorMessage = "Sorry, I encountered an error. Please check your internet connection and try again."
+
+    if (error.message && error.message.includes("JSON")) {
+      errorMessage = "Sorry, there was an error processing your request. Please try again."
+    }
+
+    return new Response(JSON.stringify({ message: errorMessage }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
       },
-    )
+    })
   }
 }
