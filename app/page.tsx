@@ -30,7 +30,6 @@ import OptimizedCard from "@/components/optimized-card"
 import NotificationManager from "@/components/notification-manager"
 import { AIAssistant } from "@/components/ai-assistant"
 
-// Helper function to get current Manila time
 const getManilaTime = () => {
   return new Date().toLocaleString("en-US", {
     timeZone: "Asia/Manila",
@@ -44,7 +43,6 @@ const getManilaTime = () => {
   })
 }
 
-// Helper function to get current day of week in Manila
 const getCurrentDayManila = () => {
   return new Date().toLocaleDateString("en-US", {
     timeZone: "Asia/Manila",
@@ -52,7 +50,6 @@ const getCurrentDayManila = () => {
   })
 }
 
-// Helper function to get week start date in Manila
 const getWeekStartManila = () => {
   const now = new Date()
   const manilaDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
@@ -62,7 +59,6 @@ const getWeekStartManila = () => {
   return weekStart.toISOString().split("T")[0]
 }
 
-// Helper function to get week end date in Manila
 const getWeekEndManila = () => {
   const weekStart = new Date(getWeekStartManila())
   const weekEnd = new Date(weekStart)
@@ -70,7 +66,6 @@ const getWeekEndManila = () => {
   return weekEnd.toISOString().split("T")[0]
 }
 
-// Helper function to check if date is in current week
 const isDateInCurrentWeek = (dateString: string) => {
   const date = new Date(dateString)
   const weekStart = new Date(getWeekStartManila())
@@ -78,7 +73,6 @@ const isDateInCurrentWeek = (dateString: string) => {
   return date >= weekStart && date <= weekEnd
 }
 
-// Helper function to get days of current week with Manila dates
 const getCurrentWeekDays = () => {
   const weekStart = getWeekStartManila()
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -190,6 +184,7 @@ export default function BudgetingApp() {
   const [currentTime, setCurrentTime] = useState("")
   const [quickActionType, setQuickActionType] = useState<"income" | "expense" | "bills" | null>(null)
   const [isClient, setIsClient] = useState(false)
+  const [dataVersion, setDataVersion] = useState(0)
 
   const [dashboardData, setDashboardData] = useState(defaultDashboardData)
   const [budgetCategories, setBudgetCategories] = useState(defaultBudgetCategories)
@@ -198,9 +193,12 @@ export default function BudgetingApp() {
   const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
   const [expenseCategories, setExpenseCategories] = useState(defaultExpenseCategories)
 
-  // Long press detection for Plus button
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [isLongPressing, setIsLongPressing] = useState(false)
+
+  const refreshData = () => {
+    setDataVersion((v) => v + 1)
+  }
 
   useEffect(() => {
     setIsClient(true)
@@ -270,7 +268,7 @@ export default function BudgetingApp() {
       dailyIncome,
     }
     safeLocalStorage.setItem("dailyBudgetAppData", JSON.stringify(dataToSave))
-  }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient])
+  }, [dashboardData, budgetCategories, weeklyPayables, transactions, dailyIncome, isClient, dataVersion])
 
   useEffect(() => {
     if (!isClient) return
@@ -381,6 +379,7 @@ export default function BudgetingApp() {
     }
 
     setTransactions((prev) => [paymentTransaction, ...prev])
+    refreshData()
   }
 
   const clearAllData = () => {
@@ -412,6 +411,7 @@ export default function BudgetingApp() {
         amount: 0,
       }))
       setDailyIncome(resetDailyIncome)
+      refreshData()
     }
   }
 
@@ -437,6 +437,7 @@ export default function BudgetingApp() {
         }
         setDailyIncome(updated)
       }
+      refreshData()
     },
 
     addExpense: (amount: number, category: string, description?: string) => {
@@ -449,12 +450,39 @@ export default function BudgetingApp() {
         date: new Date().toISOString().split("T")[0],
       }
       setTransactions((prev) => [transaction, ...prev])
+      refreshData()
+    },
+
+    deleteTransaction: (index: number) => {
+      if (index < 0 || index >= transactions.length) return false
+      const transaction = transactions[index]
+      setTransactions((prev) => prev.filter((_, i) => i !== index))
+      refreshData()
+      return true
+    },
+
+    modifyBalance: (newBalance: number) => {
+      setDashboardData((prev) => ({ ...prev, startingBalance: newBalance }))
+      refreshData()
+    },
+
+    updateGoal: (goalType: "daily" | "weekly", newGoal: number) => {
+      if (goalType === "daily") {
+        setDashboardData((prev) => ({ ...prev, dailyIncomeGoal: newGoal }))
+        const updated = dailyIncome.map((day) => ({
+          ...day,
+          goal: day.isWorkDay ? newGoal : 0,
+        }))
+        setDailyIncome(updated)
+      }
+      refreshData()
     },
 
     markBillAsPaid: (billName: string) => {
       const weeklyBill = weeklyPayables.find((p) => p.name.toLowerCase().includes(billName.toLowerCase()))
       if (weeklyBill) {
         handlePayment(weeklyBill.id, weeklyBill.amount)
+        refreshData()
         return true
       }
 
@@ -462,10 +490,25 @@ export default function BudgetingApp() {
       const monthlyBill = monthlyBills.find((p: any) => p.name.toLowerCase().includes(billName.toLowerCase()))
       if (monthlyBill) {
         handlePayment(monthlyBill.id, monthlyBill.amount)
+        refreshData()
         return true
       }
 
       return false
+    },
+
+    deleteBill: (billName: string) => {
+      const filtered = weeklyPayables.filter((p) => !p.name.toLowerCase().includes(billName.toLowerCase()))
+      if (filtered.length !== weeklyPayables.length) {
+        setWeeklyPayables(filtered)
+        refreshData()
+        return true
+      }
+      return false
+    },
+
+    clearAllData: () => {
+      clearAllData()
     },
 
     getAppData: () => ({
@@ -490,20 +533,22 @@ export default function BudgetingApp() {
         category: e.category,
         date: e.date,
       })),
+      allTransactions: transactions,
       remainingWorkDays: remainingWorkDays.length,
       potentialRemainingEarnings,
       thisWeekProjectedSavings,
       currency,
     }),
+
+    refreshData,
   }
 
-  // Long press handlers
   const handlePlusMouseDown = () => {
     setIsLongPressing(true)
     longPressTimerRef.current = setTimeout(() => {
       setShowAI(true)
       setIsLongPressing(false)
-    }, 500) // 500ms long press
+    }, 500)
   }
 
   const handlePlusMouseUp = () => {
@@ -515,7 +560,6 @@ export default function BudgetingApp() {
       return
     }
 
-    // Short press - open add transaction
     setQuickActionType(null)
     setShowAddTransaction(true)
     setIsLongPressing(false)
@@ -528,7 +572,6 @@ export default function BudgetingApp() {
     setIsLongPressing(false)
   }
 
-  // Touch handlers for mobile
   const handlePlusTouchStart = (e: React.TouchEvent) => {
     e.preventDefault()
     setIsLongPressing(true)
@@ -571,7 +614,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v106</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v117</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -933,6 +976,7 @@ export default function BudgetingApp() {
                 setDailyIncome(updated)
               }
             }
+            refreshData()
           }}
           budgetCategories={budgetCategories}
           expenseCategories={expenseCategories}

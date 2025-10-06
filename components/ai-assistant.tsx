@@ -21,7 +21,13 @@ interface AIAssistantProps {
     addIncome: (amount: number, description?: string) => void
     addExpense: (amount: number, category: string, description?: string) => void
     markBillAsPaid: (billName: string) => boolean
+    deleteTransaction: (index: number) => boolean
+    modifyBalance: (newBalance: number) => void
+    updateGoal: (goalType: "daily" | "weekly", newGoal: number) => void
+    deleteBill: (billName: string) => boolean
+    clearAllData: () => void
     getAppData: () => any
+    refreshData: () => void
   }
 }
 
@@ -30,7 +36,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
     {
       role: "assistant",
       content:
-        "Hi! 👋 I'm your AI budget assistant powered by Groq's free AI. I can help you track expenses, manage bills, and answer questions about your finances. What would you like to know?",
+        "Hi! 👋 I'm your AI budget assistant with FULL ADMIN ACCESS. I can help you manage your finances, add/delete transactions, modify balances, update goals, and provide financial advice. What would you like me to do?",
     },
   ])
   const [input, setInput] = useState("")
@@ -40,7 +46,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
 
-  // Auto-scroll to bottom when messages change
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" })
@@ -51,7 +56,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
     scrollToBottom()
   }, [messages, isLoading])
 
-  // Scroll when dialog opens
   useEffect(() => {
     if (open) {
       setTimeout(scrollToBottom, 100)
@@ -59,35 +63,26 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   }, [open])
 
   useEffect(() => {
-    // Initialize speech recognition
     if (typeof window !== "undefined" && "webkitSpeechRecognition" in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition
       recognitionRef.current = new SpeechRecognition()
       recognitionRef.current.continuous = false
       recognitionRef.current.interimResults = false
-
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript
         setInput(transcript)
         setIsListening(false)
       }
-
-      recognitionRef.current.onerror = () => {
-        setIsListening(false)
-      }
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false)
-      }
+      recognitionRef.current.onerror = () => setIsListening(false)
+      recognitionRef.current.onend = () => setIsListening(false)
     }
   }, [])
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) {
-      alert("Voice input is not supported in your browser")
+      alert("Voice input not supported")
       return
     }
-
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -106,9 +101,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
     setIsLoading(true)
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
-
       const response = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,86 +108,68 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
           messages: [...messages, userMessage],
           appData: actionHandlers.getAppData(),
         }),
-        signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      const data = await response.json()
 
-      const text = await response.text()
-
-      if (!text || text.trim() === "") {
-        throw new Error("Empty response from server")
-      }
-
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (parseError) {
-        console.error("JSON parse error:", parseError, "Response text:", text)
-        throw new Error("Invalid JSON response from server")
-      }
-
-      // Handle actions
       if (data.action) {
-        const { type, amount, description, category, billName } = data.action
+        let actionSuccess = false
+        let actionMessage = data.message || "Action executed"
 
         try {
-          switch (type) {
+          const action = data.action
+          switch (action.type) {
             case "addIncome":
-              if (amount) {
-                actionHandlers.addIncome(amount, description || "income")
-              }
+              actionHandlers.addIncome(action.amount, action.description)
+              actionSuccess = true
               break
             case "addExpense":
-              if (amount && category) {
-                actionHandlers.addExpense(amount, category, description || "expense")
-              }
+              actionHandlers.addExpense(action.amount, action.category, action.description)
+              actionSuccess = true
               break
-            case "markBillAsPaid":
-              if (billName) {
-                const success = actionHandlers.markBillAsPaid(billName)
-                if (!success) {
-                  data.message += " (Note: Bill not found or already paid)"
-                }
-              }
+            case "deleteTransaction":
+              actionSuccess = actionHandlers.deleteTransaction(action.index - 1)
+              if (!actionSuccess) actionMessage = `Transaction ${action.index} not found`
+              break
+            case "modifyBalance":
+              actionHandlers.modifyBalance(action.newBalance)
+              actionSuccess = true
+              break
+            case "updateGoal":
+              actionHandlers.updateGoal(action.goalType, action.newGoal)
+              actionSuccess = true
+              break
+            case "markBillPaid":
+              actionSuccess = actionHandlers.markBillAsPaid(action.billName)
+              if (!actionSuccess) actionMessage = `Bill "${action.billName}" not found`
+              break
+            case "deleteBill":
+              actionSuccess = actionHandlers.deleteBill(action.billName)
+              if (!actionSuccess) actionMessage = `Bill "${action.billName}" not found`
+              break
+            case "clearAllData":
+              actionHandlers.clearAllData()
+              actionSuccess = true
               break
           }
-        } catch (actionError) {
-          console.error("Action execution error:", actionError)
-          data.message += " (Note: There was an issue executing the action)"
+
+          if (actionSuccess) {
+            actionHandlers.refreshData()
+          }
+
+          setMessages((prev) => [...prev, { role: "assistant", content: actionMessage }])
+        } catch (error) {
+          console.error("Action error:", error)
+          setMessages((prev) => [...prev, { role: "assistant", content: "Failed to execute action" }])
         }
+      } else {
+        setMessages((prev) => [...prev, { role: "assistant", content: data.message || "..." }])
       }
-
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: data.message || "I processed your request.",
-      }
-
-      setMessages((prev) => [...prev, assistantMessage])
-    } catch (error: any) {
-      console.error("Error sending message:", error)
-
-      let errorMessage = "Sorry, I encountered an error. Please try again."
-
-      if (error.name === "AbortError") {
-        errorMessage = "Request timed out. Please check your internet connection and try again."
-      } else if (error.message.includes("JSON")) {
-        errorMessage = "Sorry, I received an invalid response. Please try again."
-      } else if (error.message.includes("fetch")) {
-        errorMessage = "Network error. Please check your internet connection."
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: errorMessage,
-        },
-      ])
+    } catch (error) {
+      console.error("AI error:", error)
+      setMessages((prev) => [...prev, { role: "assistant", content: "Network error. Try again." }])
     } finally {
       setIsLoading(false)
     }
@@ -213,7 +187,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl h-[600px] flex flex-col">
-        {/* Purple/Pink Gradient Header */}
         <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-t-lg">
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -222,7 +195,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
             </div>
             <div>
               <h2 className="text-lg font-bold">AI Budget Assistant</h2>
-              <p className="text-xs text-purple-100">Powered by Groq AI (Free & Fast)</p>
+              <p className="text-xs text-purple-100">Full Admin Access • Powered by Groq</p>
             </div>
           </div>
           <Button
@@ -235,7 +208,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
           </Button>
         </div>
 
-        {/* Messages Area with Auto-Scroll */}
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
           <div className="space-y-4">
             {messages.map((message, index) => (
@@ -268,12 +240,10 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
                 </div>
               </div>
             )}
-            {/* Invisible div for auto-scroll target */}
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
-        {/* Input Area */}
         <CardContent className="p-4 border-t">
           <div className="flex gap-2">
             <Button
@@ -289,7 +259,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={isListening ? "Listening..." : "Ask me anything or give me a command..."}
+              placeholder={isListening ? "Listening..." : "Ask me anything or command..."}
               disabled={isLoading || isListening}
               className="flex-1"
             />
@@ -302,7 +272,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Try: "How much did I spend?" or "Add ₱500 from work" or "Mark Groceries as paid"
+            💡 Try: "Add ₱1100 from work" • "Delete transaction 3" • "Set balance to ₱5000" • "Give me tips"
           </p>
         </CardContent>
       </Card>
