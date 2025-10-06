@@ -8,10 +8,10 @@ export async function POST(req: Request) {
     if (!apiKey) {
       return new Response(
         JSON.stringify({
-          error: "Groq API key not configured. Get your FREE key at https://console.groq.com/keys",
+          message: "Groq API key not configured. Please add GROQ_API_KEY to your environment variables.",
         }),
         {
-          status: 500,
+          status: 200,
           headers: { "Content-Type": "application/json" },
         },
       )
@@ -66,84 +66,105 @@ For regular conversation without actions, respond normally without JSON.
 Be conversational, helpful, and provide clear financial insights. Use emojis occasionally to be friendly.`,
     }
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        messages: [systemMessage, ...messages],
-        temperature: 0.7,
-        max_tokens: 800,
-        top_p: 1,
-        stream: false,
-      }),
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
 
-    if (!response.ok) {
-      const error = await response.text()
-      console.error("Groq API error:", error)
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          messages: [systemMessage, ...messages],
+          temperature: 0.7,
+          max_tokens: 800,
+          top_p: 1,
+          stream: false,
+        }),
+        signal: controller.signal,
+      })
 
-      // Check if it's an authentication error
-      if (response.status === 401) {
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Groq API error:", errorText)
+
         return new Response(
           JSON.stringify({
-            error: "Invalid API key. Get your FREE Groq API key at https://console.groq.com/keys",
-            details: error,
+            message: `Sorry, I encountered an error (${response.status}). Please try again.`,
           }),
           {
-            status: 401,
+            status: 200,
             headers: { "Content-Type": "application/json" },
           },
         )
       }
 
-      return new Response(
-        JSON.stringify({
-          error: "Failed to get AI response",
-          details: error,
-        }),
-        {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      )
-    }
+      const data = await response.json()
 
-    const data = await response.json()
-    const aiMessage = data.choices[0].message.content
-
-    // Try to parse as JSON for actions
-    let parsedResponse
-    try {
-      // Try to extract JSON if wrapped in markdown code blocks
-      let jsonContent = aiMessage
-      const jsonMatch = aiMessage.match(/```json\s*([\s\S]*?)\s*```/)
-      if (jsonMatch) {
-        jsonContent = jsonMatch[1]
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        return new Response(
+          JSON.stringify({
+            message: "Sorry, I received an invalid response. Please try again.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
       }
 
-      parsedResponse = JSON.parse(jsonContent)
-    } catch {
-      // If not JSON, treat as plain message
-      parsedResponse = { message: aiMessage }
-    }
+      const aiMessage = data.choices[0].message.content
 
-    return new Response(JSON.stringify(parsedResponse), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    })
+      // Try to parse as JSON for actions
+      let parsedResponse
+      try {
+        // Try to extract JSON if wrapped in markdown code blocks
+        let jsonContent = aiMessage
+        const jsonMatch = aiMessage.match(/```json\s*([\s\S]*?)\s*```/)
+        if (jsonMatch) {
+          jsonContent = jsonMatch[1]
+        }
+
+        parsedResponse = JSON.parse(jsonContent)
+      } catch {
+        // If not JSON, treat as plain message
+        parsedResponse = { message: aiMessage }
+      }
+
+      return new Response(JSON.stringify(parsedResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId)
+
+      if (fetchError.name === "AbortError") {
+        return new Response(
+          JSON.stringify({
+            message: "Request timed out. Please try again.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      }
+
+      throw fetchError
+    }
   } catch (error) {
     console.error("AI chat error:", error)
     return new Response(
       JSON.stringify({
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error",
+        message: "Sorry, I encountered an error. Please check your internet connection and try again.",
       }),
       {
-        status: 500,
+        status: 200,
         headers: { "Content-Type": "application/json" },
       },
     )

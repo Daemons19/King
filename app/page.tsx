@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -195,6 +197,10 @@ export default function BudgetingApp() {
   const [transactions, setTransactions] = useState(defaultTransactions)
   const [dailyIncome, setDailyIncome] = useState(() => initializeDailyIncome())
   const [expenseCategories, setExpenseCategories] = useState(defaultExpenseCategories)
+
+  // Long press detection for Plus button
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [isLongPressing, setIsLongPressing] = useState(false)
 
   useEffect(() => {
     setIsClient(true)
@@ -491,6 +497,62 @@ export default function BudgetingApp() {
     }),
   }
 
+  // Long press handlers
+  const handlePlusMouseDown = () => {
+    setIsLongPressing(true)
+    longPressTimerRef.current = setTimeout(() => {
+      setShowAI(true)
+      setIsLongPressing(false)
+    }, 500) // 500ms long press
+  }
+
+  const handlePlusMouseUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+    }
+
+    if (!isLongPressing) {
+      return
+    }
+
+    // Short press - open add transaction
+    setQuickActionType(null)
+    setShowAddTransaction(true)
+    setIsLongPressing(false)
+  }
+
+  const handlePlusMouseLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+    }
+    setIsLongPressing(false)
+  }
+
+  // Touch handlers for mobile
+  const handlePlusTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault()
+    setIsLongPressing(true)
+    longPressTimerRef.current = setTimeout(() => {
+      setShowAI(true)
+      setIsLongPressing(false)
+    }, 500)
+  }
+
+  const handlePlusTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault()
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+    }
+
+    if (!isLongPressing) {
+      return
+    }
+
+    setQuickActionType(null)
+    setShowAddTransaction(true)
+    setIsLongPressing(false)
+  }
+
   if (!isClient) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center">
@@ -509,7 +571,7 @@ export default function BudgetingApp() {
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 text-white">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Daily Budget v105</h1>
+              <h1 className="text-2xl font-bold">Daily Budget v106</h1>
               <p className="text-purple-100 text-xs">Manila Time: {currentTime}</p>
             </div>
             <div className="flex gap-2">
@@ -822,11 +884,12 @@ export default function BudgetingApp() {
 
             <div className="mx-4">
               <Button
-                onClick={() => {
-                  setQuickActionType(null)
-                  setShowAddTransaction(true)
-                }}
-                className="w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+                onMouseDown={handlePlusMouseDown}
+                onMouseUp={handlePlusMouseUp}
+                onMouseLeave={handlePlusMouseLeave}
+                onTouchStart={handlePlusTouchStart}
+                onTouchEnd={handlePlusTouchEnd}
+                className={`w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 ${isLongPressing ? "scale-110" : "hover:scale-110"}`}
               >
                 <Plus className="w-6 h-6" />
               </Button>

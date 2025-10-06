@@ -94,6 +94,9 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
     setIsLoading(true)
 
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000)
+
       const response = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -101,14 +104,28 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
           messages: [...messages, userMessage],
           appData: actionHandlers.getAppData(),
         }),
+        signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to get response")
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
+      const text = await response.text()
+
+      if (!text || text.trim() === "") {
+        throw new Error("Empty response from server")
+      }
+
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError, "Response text:", text)
+        throw new Error("Invalid JSON response from server")
+      }
 
       // Handle actions
       if (data.action) {
@@ -147,12 +164,18 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
       }
 
       setMessages((prev) => [...prev, assistantMessage])
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending message:", error)
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Sorry, I encountered an error. Please check your Groq API key in .env.local"
+
+      let errorMessage = "Sorry, I encountered an error. Please try again."
+
+      if (error.name === "AbortError") {
+        errorMessage = "Request timed out. Please check your internet connection and try again."
+      } else if (error.message.includes("JSON")) {
+        errorMessage = "Sorry, I received an invalid response. Please try again."
+      } else if (error.message.includes("fetch")) {
+        errorMessage = "Network error. Please check your internet connection."
+      }
 
       setMessages((prev) => [
         ...prev,
