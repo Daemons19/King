@@ -72,6 +72,16 @@ CURRENT APP DATA:
 - This Week Expenses: ${appData?.currency || "₱"}${(appData?.currentWeekExpenses || 0).toLocaleString()}
 - Pending Bills: ${appData?.currency || "₱"}${(appData?.totalPendingPayables || 0).toLocaleString()}
 
+DAILY INCOME (This Week):
+${
+  appData?.dailyIncome
+    ?.map(
+      (d: any) =>
+        `${d.day} (${d.date}): ${appData.currency}${d.amount.toLocaleString()} / ${appData.currency}${d.goal.toLocaleString()} ${d.isWorkDay ? "" : "[REST DAY]"}`,
+    )
+    .join("\n") || "No daily data"
+}
+
 ALL TRANSACTIONS (Last 50):
 ${
   appData?.allTransactions
@@ -90,31 +100,43 @@ THIS WEEK EXPENSES:
 ${appData?.thisWeekExpenses?.map((e: any) => `- ${e.description}: ${appData.currency}${e.amount.toLocaleString()} (${e.category})`).join("\n") || "None"}
 
 YOU HAVE FULL ADMIN POWERS TO:
-1. Add income/expenses
+1. Add income/expenses to ANY date (today, past, or future)
 2. Delete ANY transaction by index number
 3. Modify balance, goals, any amounts
 4. Mark bills paid or delete them
-5. Clear all data
-6. Provide financial analysis and suggestions
+5. Edit workday status for any day
+6. Modify daily income amounts directly
+7. Clear all data
+8. Provide financial analysis and suggestions
 
-CRITICAL: When executing actions, respond with ONLY pure JSON (no markdown, no code blocks, no backticks):
-{"message": "Friendly response", "action": {"type": "actionType", "params": {...}}}
+CRITICAL RESPONSE FORMAT:
+- When executing actions, respond with PURE JSON ONLY
+- NO markdown formatting, NO code blocks, NO backticks
+- Just raw JSON: {"message": "text", "action": {...}}
+- For regular chat (no actions), respond naturally without JSON
 
 ACTION TYPES:
-- addIncome: {"type": "addIncome", "amount": 1000, "description": "work"}
-- addExpense: {"type": "addExpense", "amount": 100, "category": "Food", "description": "lunch"}
+- addIncome: {"type": "addIncome", "amount": 1000, "description": "work", "date": "2025-10-06"}
+  * If date is omitted, adds to today
+  * Date format: YYYY-MM-DD
+- addExpense: {"type": "addExpense", "amount": 100, "category": "Food", "description": "lunch", "date": "2025-10-06"}
 - deleteTransaction: {"type": "deleteTransaction", "index": 5}
 - modifyBalance: {"type": "modifyBalance", "newBalance": 5000}
 - updateGoal: {"type": "updateGoal", "goalType": "daily", "newGoal": 1200}
+- setDailyIncome: {"type": "setDailyIncome", "date": "2025-10-06", "amount": 1100}
+  * Directly sets the income for a specific date
+- setWorkDay: {"type": "setWorkDay", "date": "2025-10-06", "isWorkDay": true, "goal": 1100}
+  * Sets whether a day is a workday and its goal
 - markBillPaid: {"type": "markBillPaid", "billName": "Groceries"}
 - deleteBill: {"type": "deleteBill", "billName": "Phone"}
 - clearAllData: {"type": "clearAllData"}
 
-For regular chat (no actions), just respond naturally without JSON.
+EXAMPLES:
+User: "Add 1100 to monday and Tuesday is 1 earnings"
+You: {"message":"Added ₱1,100 to Monday and ₱1,000 to Tuesday! 💰","action":{"type":"addIncomeMultiple","entries":[{"date":"2025-10-06","amount":1100,"description":"work"},{"date":"2025-10-07","amount":1000,"description":"work"}]}}
 
-Examples:
-User: "Add 1100 from work"
-You: {"message":"Added ₱1,100 from work! 💰","action":{"type":"addIncome","amount":1100,"description":"work"}}
+User: "Set Monday as rest day"
+You: {"message":"Monday is now a rest day! 😴","action":{"type":"setWorkDay","date":"2025-10-06","isWorkDay":false,"goal":0}}
 
 User: "Delete transaction 3"
 You: {"message":"Deleted transaction #3! ✓","action":{"type":"deleteTransaction","index":3}}
@@ -122,7 +144,7 @@ You: {"message":"Deleted transaction #3! ✓","action":{"type":"deleteTransactio
 User: "How am I doing?"
 You: You're doing great! You've earned ₱${appData?.weeklyEarned || 0} this week. Keep it up! 💪
 
-Be conversational, helpful, provide tips and insights. You are the ultimate admin.`,
+Be conversational, helpful, provide tips and insights. You are the ultimate admin with full control.`,
     }
 
     console.log("[AI Chat] Making request to Groq API...")
@@ -387,10 +409,13 @@ Be conversational, helpful, provide tips and insights. You are the ultimate admi
 
     console.log("[AI Chat] AI message received, length:", aiMessage.length)
 
-    // Strip markdown code blocks
     aiMessage = aiMessage
       .replace(/```json\s*/gi, "")
+      .replace(/```javascript\s*/gi, "")
+      .replace(/```js\s*/gi, "")
       .replace(/```\s*/g, "")
+      .replace(/^\s*json\s*/gi, "")
+      .replace(/^\s*javascript\s*/gi, "")
       .trim()
 
     // Try parsing as JSON for actions

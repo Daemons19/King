@@ -18,8 +18,8 @@ interface AIAssistantProps {
   onOpenChange: (open: boolean) => void
   appData: any
   actionHandlers: {
-    addIncome: (amount: number, description?: string) => void
-    addExpense: (amount: number, category: string, description?: string) => void
+    addIncome: (amount: number, description?: string, date?: string) => void
+    addExpense: (amount: number, category: string, description?: string, date?: string) => void
     markBillAsPaid: (billName: string) => boolean
     deleteTransaction: (index: number) => boolean
     modifyBalance: (newBalance: number) => void
@@ -28,6 +28,9 @@ interface AIAssistantProps {
     clearAllData: () => void
     getAppData: () => any
     refreshData: () => void
+    setDailyIncome: (date: string, amount: number) => boolean
+    setWorkDay: (date: string, isWorkDay: boolean, goal?: number) => boolean
+    addIncomeMultiple: (entries: { amount: number; description?: string; date?: string }[]) => void
   }
 }
 
@@ -256,13 +259,31 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
           switch (action.type) {
             case "addIncome":
               if (action.amount) {
-                actionHandlers.addIncome(action.amount, action.description)
+                actionHandlers.addIncome(action.amount, action.description, action.date)
                 actionSuccess = true
               }
               break
             case "addExpense":
               if (action.amount && action.category) {
-                actionHandlers.addExpense(action.amount, action.category, action.description)
+                actionHandlers.addExpense(action.amount, action.category, action.description, action.date)
+                actionSuccess = true
+              }
+              break
+            case "setDailyIncome":
+              if (action.date && typeof action.amount === "number") {
+                actionSuccess = actionHandlers.setDailyIncome(action.date, action.amount)
+                if (!actionSuccess) actionMessage = `Date ${action.date} not found in current week`
+              }
+              break
+            case "setWorkDay":
+              if (action.date && typeof action.isWorkDay === "boolean") {
+                actionSuccess = actionHandlers.setWorkDay(action.date, action.isWorkDay, action.goal)
+                if (!actionSuccess) actionMessage = `Date ${action.date} not found in current week`
+              }
+              break
+            case "addIncomeMultiple":
+              if (action.entries && Array.isArray(action.entries)) {
+                actionHandlers.addIncomeMultiple(action.entries)
                 actionSuccess = true
               }
               break
