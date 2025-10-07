@@ -22,6 +22,7 @@ interface AIAssistantProps {
     addExpense: (amount: number, category: string, description?: string, date?: string) => void
     markBillAsPaid: (billName: string) => boolean
     deleteTransaction: (index: number) => boolean
+    editTransaction: (index: number, updates: Partial<any>) => boolean
     modifyBalance: (newBalance: number) => void
     updateGoal: (goalType: "daily" | "weekly", newGoal: number) => void
     deleteBill: (billName: string) => boolean
@@ -31,6 +32,10 @@ interface AIAssistantProps {
     setDailyIncome: (date: string, amount: number) => boolean
     setWorkDay: (date: string, isWorkDay: boolean, goal?: number) => boolean
     addIncomeMultiple: (entries: { amount: number; description?: string; date?: string }[]) => void
+    addPayable: (name: string, amount: number, dueDay: string, frequency?: string) => boolean
+    addMonthlyPayable: (name: string, amount: number, dayOfMonth: number) => boolean
+    editPayable: (billName: string, updates: Partial<any>) => boolean
+    addExpenseCategory: (category: string) => boolean
   }
 }
 
@@ -131,7 +136,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
     if (!messageToSend.trim() || isLoading) return
 
-    // Check online status before sending
     if (!navigator.onLine) {
       console.error("[AI Assistant] Offline - cannot send message")
       setMessages((prev) => [
@@ -148,7 +152,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
     const userMessage: Message = { role: "user", content: messageToSend }
 
-    // Only add user message if this is the first attempt
     if (retryAttempt === 0) {
       setMessages((prev) => [...prev, userMessage])
       setInput("")
@@ -166,7 +169,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
       const timeoutId = setTimeout(() => {
         console.error("[AI Assistant] Client timeout")
         controller.abort()
-      }, 45000) // 45 second client timeout
+      }, 45000)
 
       const startTime = Date.now()
 
@@ -207,24 +210,20 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
         throw new Error("Invalid JSON response from server")
       }
 
-      // Reset retry count on success
       setRetryCount(0)
       setLastError(null)
       console.log("[AI Assistant] Message sent successfully")
 
-      // Check if response contains error information
       if (data.errorType) {
         console.error("[AI Assistant] Server returned error:", data.errorType, data.message)
 
-        // For certain errors, don't retry
         if (data.errorType === "auth" || data.errorType === "badRequest") {
           setMessages((prev) => [...prev, { role: "assistant", content: data.message }])
           return
         }
 
-        // For network/timeout errors, retry
         if ((data.errorType === "network" || data.errorType === "timeout") && retryAttempt < maxRetries) {
-          const delay = Math.min(2000 * Math.pow(2, retryAttempt), 8000) // Exponential backoff, max 8s
+          const delay = Math.min(2000 * Math.pow(2, retryAttempt), 8000)
           console.log(`[AI Assistant] Retrying after ${delay}ms...`)
 
           setMessages((prev) => [
@@ -237,12 +236,10 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
           await new Promise((resolve) => setTimeout(resolve, delay))
 
-          // Remove the retry message before retrying
           setMessages((prev) => prev.slice(0, -1))
           return sendMessage(messageToSend, retryAttempt + 1)
         }
 
-        // Show error to user
         setMessages((prev) => [...prev, { role: "assistant", content: data.message }])
         setLastError(data.errorType)
         return
@@ -288,9 +285,15 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
               }
               break
             case "deleteTransaction":
-              if (action.index) {
+              if (typeof action.index === "number") {
                 actionSuccess = actionHandlers.deleteTransaction(action.index - 1)
                 if (!actionSuccess) actionMessage = `Transaction ${action.index} not found or already deleted`
+              }
+              break
+            case "editTransaction":
+              if (typeof action.index === "number" && action.updates) {
+                actionSuccess = actionHandlers.editTransaction(action.index - 1, action.updates)
+                if (!actionSuccess) actionMessage = `Transaction ${action.index} not found`
               }
               break
             case "modifyBalance":
@@ -305,6 +308,18 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
                 actionSuccess = true
               }
               break
+            case "addPayable":
+              if (action.name && action.amount && action.dueDay) {
+                actionSuccess = actionHandlers.addPayable(action.name, action.amount, action.dueDay, action.frequency)
+                if (!actionSuccess) actionMessage = `Failed to add payable`
+              }
+              break
+            case "addMonthlyPayable":
+              if (action.name && action.amount && action.dayOfMonth) {
+                actionSuccess = actionHandlers.addMonthlyPayable(action.name, action.amount, action.dayOfMonth)
+                if (!actionSuccess) actionMessage = `Failed to add monthly payable`
+              }
+              break
             case "markBillPaid":
               if (action.billName) {
                 actionSuccess = actionHandlers.markBillAsPaid(action.billName)
@@ -317,6 +332,18 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
                 if (!actionSuccess) actionMessage = `Bill "${action.billName}" not found`
               }
               break
+            case "editPayable":
+              if (action.billName && action.updates) {
+                actionSuccess = actionHandlers.editPayable(action.billName, action.updates)
+                if (!actionSuccess) actionMessage = `Bill "${action.billName}" not found`
+              }
+              break
+            case "addExpenseCategory":
+              if (action.category) {
+                actionSuccess = actionHandlers.addExpenseCategory(action.category)
+                if (!actionSuccess) actionMessage = `Category "${action.category}" already exists`
+              }
+              break
             case "clearAllData":
               actionHandlers.clearAllData()
               actionSuccess = true
@@ -325,7 +352,7 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
           if (actionSuccess) {
             console.log("[AI Assistant] Action executed successfully, refreshing data")
-            actionHandlers.refreshData()
+            setTimeout(() => actionHandlers.refreshData(), 100)
           }
 
           setMessages((prev) => [...prev, { role: "assistant", content: actionMessage }])
@@ -365,7 +392,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
         shouldRetry = true
       }
 
-      // Auto-retry for network/timeout errors
       if (shouldRetry && retryAttempt < maxRetries) {
         const delay = Math.min(2000 * Math.pow(2, retryAttempt), 8000)
         setRetryCount(retryAttempt + 1)
@@ -376,7 +402,6 @@ export function AIAssistant({ open, onOpenChange, appData, actionHandlers }: AIA
 
         await new Promise((resolve) => setTimeout(resolve, delay))
 
-        // Remove retry message
         setMessages((prev) => prev.slice(0, -1))
         return sendMessage(messageToSend, retryAttempt + 1)
       }

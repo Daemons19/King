@@ -143,7 +143,7 @@ const initializeDailyIncome = () => {
   return weekDays.map((dayInfo) => ({
     day: dayInfo.day,
     amount: dayInfo.isPast ? Math.random() * 400 + 800 : 0,
-    goal: dayInfo.day === "Sun" ? 0 : 1100,
+    goal: dayInfo.isWorkDay === false ? 0 : 1100,
     date: dayInfo.date,
     isToday: dayInfo.isToday,
     isPast: dayInfo.isPast,
@@ -170,6 +170,74 @@ const safeLocalStorage = {
   },
 }
 
+const getStoredData = (key: string, defaultValue: any) => {
+  if (typeof window === "undefined") return defaultValue
+  try {
+    const saved = localStorage.getItem(key)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (error) {
+    console.error(`Error loading ${key}:`, error)
+  }
+  return defaultValue
+}
+
+const initializeAppData = () => {
+  if (typeof window === "undefined") {
+    return {
+      dashboardData: defaultDashboardData,
+      budgetCategories: defaultBudgetCategories,
+      weeklyPayables: defaultWeeklyPayables,
+      transactions: defaultTransactions,
+      dailyIncome: initializeDailyIncome(),
+      expenseCategories: defaultExpenseCategories,
+    }
+  }
+
+  const saved = getStoredData("dailyBudgetAppData", null)
+
+  if (saved) {
+    const loadedDashboard = saved.dashboardData || defaultDashboardData
+    if (!loadedDashboard.startingBalance) {
+      loadedDashboard.startingBalance = loadedDashboard.totalBalance || defaultDashboardData.startingBalance
+    }
+
+    const savedDailyIncome = saved.dailyIncome || []
+    const currentWeekDays = getCurrentWeekDays()
+    const loadedDailyIncome = currentWeekDays.map((dayInfo) => {
+      const savedDay = savedDailyIncome.find((d: any) => d.date === dayInfo.date)
+      return {
+        day: dayInfo.day,
+        amount: savedDay?.amount || 0,
+        goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100,
+        date: dayInfo.date,
+        isToday: dayInfo.isToday,
+        isPast: dayInfo.isPast,
+        isWorkDay: savedDay?.isWorkDay !== undefined ? savedDay.isWorkDay : dayInfo.day !== "Sun",
+      }
+    })
+
+    return {
+      dashboardData: loadedDashboard,
+      budgetCategories: saved.budgetCategories || defaultBudgetCategories,
+      weeklyPayables: saved.weeklyPayables || defaultWeeklyPayables,
+      transactions: saved.transactions || defaultTransactions,
+      dailyIncome: loadedDailyIncome,
+      expenseCategories: getStoredData("expenseCategories", defaultExpenseCategories),
+    }
+  }
+
+  return {
+    dashboardData: defaultDashboardData,
+    budgetCategories: defaultBudgetCategories,
+    weeklyPayables: defaultWeeklyPayables,
+    transactions: defaultTransactions,
+    dailyIncome: initializeDailyIncome(),
+    expenseCategories: defaultExpenseCategories,
+  }
+}
+
 const safeToLocaleString = (value: any): string => {
   const num = Number(value)
   return isNaN(num) ? "0" : num.toLocaleString()
@@ -186,99 +254,13 @@ export default function BudgetingApp() {
   const [isClient, setIsClient] = useState(false)
   const [dataVersion, setDataVersion] = useState(0)
 
-  const [dashboardData, setDashboardData] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("dailyBudgetAppData")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          const loadedData = parsed.dashboardData || defaultDashboardData
-          if (!loadedData.startingBalance) {
-            loadedData.startingBalance = loadedData.totalBalance || defaultDashboardData.startingBalance
-          }
-          return loadedData
-        } catch {}
-      }
-    }
-    return defaultDashboardData
-  })
-
-  const [budgetCategories, setBudgetCategories] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("dailyBudgetAppData")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          return parsed.budgetCategories || defaultBudgetCategories
-        } catch {}
-      }
-    }
-    return defaultBudgetCategories
-  })
-
-  const [weeklyPayables, setWeeklyPayables] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("dailyBudgetAppData")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          return parsed.weeklyPayables || defaultWeeklyPayables
-        } catch {}
-      }
-    }
-    return defaultWeeklyPayables
-  })
-
-  const [transactions, setTransactions] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("dailyBudgetAppData")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          return parsed.transactions || defaultTransactions
-        } catch {}
-      }
-    }
-    return defaultTransactions
-  })
-
-  const [dailyIncome, setDailyIncome] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("dailyBudgetAppData")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          const savedDailyIncome = parsed.dailyIncome || []
-          const currentWeekDays = getCurrentWeekDays()
-          return currentWeekDays.map((dayInfo) => {
-            const savedDay = savedDailyIncome.find((d: any) => d.date === dayInfo.date)
-            return {
-              day: dayInfo.day,
-              amount: savedDay?.amount || 0,
-              goal: savedDay?.isWorkDay === false ? 0 : savedDay?.goal || 1100,
-              date: dayInfo.date,
-              isToday: dayInfo.isToday,
-              isPast: dayInfo.isPast,
-              isWorkDay: savedDay?.isWorkDay !== undefined ? savedDay.isWorkDay : dayInfo.day !== "Sun",
-            }
-          })
-        } catch {}
-      }
-    }
-    return initializeDailyIncome()
-  })
-
-  const [expenseCategories, setExpenseCategories] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("expenseCategories")
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch {}
-      }
-    }
-    return defaultExpenseCategories
-  })
+  const initialData = initializeAppData()
+  const [dashboardData, setDashboardData] = useState(initialData.dashboardData)
+  const [budgetCategories, setBudgetCategories] = useState(initialData.budgetCategories)
+  const [weeklyPayables, setWeeklyPayables] = useState(initialData.weeklyPayables)
+  const [transactions, setTransactions] = useState(initialData.transactions)
+  const [dailyIncome, setDailyIncome] = useState(initialData.dailyIncome)
+  const [expenseCategories, setExpenseCategories] = useState(initialData.expenseCategories)
 
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [isLongPressing, setIsLongPressing] = useState(false)
@@ -461,7 +443,7 @@ export default function BudgetingApp() {
     addIncome: (amount: number, description?: string, date?: string) => {
       const targetDate = date || new Date().toISOString().split("T")[0]
       const transaction = {
-        id: Date.now(),
+        id: Date.now() + Math.random(), // Ensure unique ID
         description: description || "work",
         amount: amount,
         type: "income" as const,
@@ -471,22 +453,25 @@ export default function BudgetingApp() {
       setTransactions((prev) => [transaction, ...prev])
 
       // Update daily income for the target date
-      const dayIndex = dailyIncome.findIndex((d) => d.date === targetDate)
-      if (dayIndex !== -1) {
-        const updated = [...dailyIncome]
-        updated[dayIndex] = {
-          ...updated[dayIndex],
-          amount: updated[dayIndex].amount + amount,
+      setDailyIncome((prev) => {
+        const dayIndex = prev.findIndex((d) => d.date === targetDate)
+        if (dayIndex !== -1) {
+          const updated = [...prev]
+          updated[dayIndex] = {
+            ...updated[dayIndex],
+            amount: updated[dayIndex].amount + amount,
+          }
+          return updated
         }
-        setDailyIncome(updated)
-      }
+        return prev
+      })
       refreshData()
     },
 
     addExpense: (amount: number, category: string, description?: string, date?: string) => {
       const targetDate = date || new Date().toISOString().split("T")[0]
       const transaction = {
-        id: Date.now(),
+        id: Date.now() + Math.random(),
         description: description || category,
         amount: -Math.abs(amount),
         type: "expense" as const,
@@ -499,8 +484,18 @@ export default function BudgetingApp() {
 
     deleteTransaction: (index: number) => {
       if (index < 0 || index >= transactions.length) return false
-      const transaction = transactions[index]
       setTransactions((prev) => prev.filter((_, i) => i !== index))
+      refreshData()
+      return true
+    },
+
+    editTransaction: (index: number, updates: Partial<any>) => {
+      if (index < 0 || index >= transactions.length) return false
+      setTransactions((prev) => {
+        const updated = [...prev]
+        updated[index] = { ...updated[index], ...updates }
+        return updated
+      })
       refreshData()
       return true
     },
@@ -513,50 +508,96 @@ export default function BudgetingApp() {
     updateGoal: (goalType: "daily" | "weekly", newGoal: number) => {
       if (goalType === "daily") {
         setDashboardData((prev) => ({ ...prev, dailyIncomeGoal: newGoal }))
-        const updated = dailyIncome.map((day) => ({
-          ...day,
-          goal: day.isWorkDay ? newGoal : 0,
-        }))
-        setDailyIncome(updated)
+        setDailyIncome((prev) =>
+          prev.map((day) => ({
+            ...day,
+            goal: day.isWorkDay ? newGoal : 0,
+          })),
+        )
       }
       refreshData()
     },
 
     setDailyIncome: (date: string, amount: number) => {
-      const dayIndex = dailyIncome.findIndex((d) => d.date === date)
-      if (dayIndex !== -1) {
-        const updated = [...dailyIncome]
-        updated[dayIndex] = {
-          ...updated[dayIndex],
-          amount: amount,
+      setDailyIncome((prev) => {
+        const dayIndex = prev.findIndex((d) => d.date === date)
+        if (dayIndex !== -1) {
+          const updated = [...prev]
+          updated[dayIndex] = {
+            ...updated[dayIndex],
+            amount: amount,
+          }
+          return updated
         }
-        setDailyIncome(updated)
-        refreshData()
-        return true
-      }
-      return false
+        return prev
+      })
+      refreshData()
+      return true
     },
 
     setWorkDay: (date: string, isWorkDay: boolean, goal?: number) => {
-      const dayIndex = dailyIncome.findIndex((d) => d.date === date)
-      if (dayIndex !== -1) {
-        const updated = [...dailyIncome]
-        updated[dayIndex] = {
-          ...updated[dayIndex],
-          isWorkDay: isWorkDay,
-          goal: isWorkDay ? goal || 1100 : 0,
+      setDailyIncome((prev) => {
+        const dayIndex = prev.findIndex((d) => d.date === date)
+        if (dayIndex !== -1) {
+          const updated = [...prev]
+          updated[dayIndex] = {
+            ...updated[dayIndex],
+            isWorkDay: isWorkDay,
+            goal: isWorkDay ? goal || 1100 : 0,
+          }
+          return updated
         }
-        setDailyIncome(updated)
-        refreshData()
-        return true
-      }
-      return false
+        return prev
+      })
+      refreshData()
+      return true
     },
 
     addIncomeMultiple: (entries: Array<{ date: string; amount: number; description?: string }>) => {
       entries.forEach((entry) => {
         aiActionHandlers.addIncome(entry.amount, entry.description || "work", entry.date)
       })
+    },
+
+    addPayable: (name: string, amount: number, dueDay: string, frequency?: string) => {
+      const newPayable = {
+        id: Date.now(),
+        name,
+        amount,
+        dueDay,
+        status: "pending" as const,
+        week: "This Week",
+        frequency: frequency || "once",
+        paidCount: 0,
+      }
+      setWeeklyPayables((prev) => [...prev, newPayable])
+      refreshData()
+      return true
+    },
+
+    addMonthlyPayable: (name: string, amount: number, dayOfMonth: number) => {
+      const monthlyPayables = JSON.parse(safeLocalStorage.getItem("monthlyPayables") || "{}")
+      const currentDate = new Date()
+      const currentMonthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`
+
+      if (!monthlyPayables[currentMonthKey]) {
+        monthlyPayables[currentMonthKey] = []
+      }
+
+      const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOfMonth)
+
+      monthlyPayables[currentMonthKey].push({
+        id: Date.now(),
+        name,
+        amount,
+        date: dueDate.toISOString().split("T")[0],
+        status: "pending",
+        frequency: "monthly",
+      })
+
+      safeLocalStorage.setItem("monthlyPayables", JSON.stringify(monthlyPayables))
+      refreshData()
+      return true
     },
 
     markBillAsPaid: (billName: string) => {
@@ -582,6 +623,29 @@ export default function BudgetingApp() {
       const filtered = weeklyPayables.filter((p) => !p.name.toLowerCase().includes(billName.toLowerCase()))
       if (filtered.length !== weeklyPayables.length) {
         setWeeklyPayables(filtered)
+        refreshData()
+        return true
+      }
+      return false
+    },
+
+    editPayable: (billName: string, updates: Partial<any>) => {
+      setWeeklyPayables((prev) => {
+        const index = prev.findIndex((p) => p.name.toLowerCase().includes(billName.toLowerCase()))
+        if (index !== -1) {
+          const updated = [...prev]
+          updated[index] = { ...updated[index], ...updates }
+          return updated
+        }
+        return prev
+      })
+      refreshData()
+      return true
+    },
+
+    addExpenseCategory: (category: string) => {
+      if (!expenseCategories.includes(category)) {
+        setExpenseCategories((prev) => [...prev, category])
         refreshData()
         return true
       }
@@ -624,6 +688,7 @@ export default function BudgetingApp() {
         date: e.date,
       })),
       allTransactions: transactions,
+      allPayables: weeklyPayables,
       remainingWorkDays: remainingWorkDays.length,
       potentialRemainingEarnings,
       thisWeekProjectedSavings,
