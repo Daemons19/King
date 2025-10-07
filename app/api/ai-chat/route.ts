@@ -1,6 +1,5 @@
 export const runtime = "edge"
 export const dynamic = "force-dynamic"
-export const revalidate = 0
 
 export async function POST(req: Request) {
   console.log("[AI Chat] Request received")
